@@ -1,0 +1,8 @@
+- generic [ref=f2e4]:
+  - banner [ref=f2e24]:
+    - heading "Iris SYNCD" [level=1] [ref=f2e25]
+    - generic [ref=f2e26]:
+      - generic [ref=f2e27]: speaker
+      - generic [ref=f2e28]: Connected
+  - paragraph [ref=f2e32]: Waiting for audio...
+  - button "Leave Session" [ref=f2e33] [cursor=pointer]
