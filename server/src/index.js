@@ -22,17 +22,19 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
   : isProduction ? [] : ['http://localhost:5173', 'http://localhost:5174'];
 
+const useCredentials = ALLOWED_ORIGINS.length > 0;
+
 const io = new Server(server, {
   cors: {
     origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
     methods: ['GET', 'POST'],
-    credentials: true
+    credentials: useCredentials
   }
 });
 
 app.use(cors({
   origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
-  credentials: true
+  credentials: useCredentials
 }));
 app.use(express.json());
 
