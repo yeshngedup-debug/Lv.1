@@ -1,0 +1,26 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Iris SYNCD" [level=1] [ref=e5]
+    - generic [ref=e12]:
+      - generic [ref=e13]: "Session: 6C288921"
+      - button "End Session" [ref=e14] [cursor=pointer]
+  - main [ref=e7]:
+    - generic [ref=e8]:
+      - generic [ref=e15]:
+        - heading "Join Session" [level=2] [ref=e16]
+        - generic [ref=e21]:
+          - textbox [ref=e22]: https://lv-1-khf8.onrender.com/join/6C288921
+          - button "Copy Link" [ref=e23] [cursor=pointer]
+        - paragraph [ref=e24]: Scan QR code or share the link with participants
+      - generic [ref=e25]:
+        - heading "Connected Devices (0)" [level=2] [ref=e26]
+        - paragraph [ref=e27]: No devices connected yet
+      - generic [ref=e28]:
+        - heading "Audio Controls" [level=2] [ref=e29]
+        - generic [ref=e30]: Choose Audio File
+        - generic [ref=e33]:
+          - heading "Push to Talk" [level=3] [ref=e34]
+          - button "Hold to Talk" [ref=e35] [cursor=pointer]
+      - generic [ref=e36]:
+        - heading "Camera Feeds" [level=2] [ref=e37]
+        - paragraph [ref=e39]: No camera feeds active

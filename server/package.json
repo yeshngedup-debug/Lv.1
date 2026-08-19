@@ -16,6 +16,6 @@
     "livekit-server-sdk": "^2.5.0",
     "qrcode": "^1.5.3",
     "socket.io": "^4.7.5",
-    "uuid": "^9.0.1"
+    "uuid": "^14.0.2"
   }
 }

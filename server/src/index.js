@@ -15,14 +15,22 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const server = createServer(app);
+const ALLOWED_ORIGINS = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) 
+  : ['http://localhost:5173', 'http://localhost:5174'];
+
 const io = new Server(server, {
   cors: {
-    origin: process.env.CORS_ORIGIN || '*',
-    methods: ['GET', 'POST']
+    origin: ALLOWED_ORIGINS,
+    methods: ['GET', 'POST'],
+    credentials: true
   }
 });
 
-app.use(cors());
+app.use(cors({
+  origin: ALLOWED_ORIGINS,
+  credentials: true
+}));
 app.use(express.json());
 
 const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
@@ -112,8 +120,19 @@ io.on('connection', (socket) => {
       return callback({ error: 'Session has expired' });
     }
 
+    // Validate role
+    const validRoles = ['speaker', 'camera'];
+    if (!validRoles.includes(role)) {
+      return callback({ error: 'Invalid role. Must be "speaker" or "camera"' });
+    }
+
+    // Sanitize nickname (max 50 chars, alphanumeric + spaces + basic punctuation)
+    const sanitizedNickname = (nickname || `Device ${session.devices.size + 1}`)
+      .slice(0, 50)
+      .replace(/[<>\"']/g, '');
+
     const deviceId = uuidv4();
-    session.addDevice(deviceId, socket.id, role, nickname || `Device ${session.devices.size + 1}`);
+    session.addDevice(deviceId, socket.id, role, sanitizedNickname);
 
     socket.join(`session:${sessionId}`);
     socket.data.sessionId = sessionId;

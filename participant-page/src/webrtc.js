@@ -10,9 +10,9 @@ const TURN_SERVERS = {
   iceServers: [
     ...ICE_SERVERS.iceServers,
     {
-      urls: process.env.TURN_URL || 'turn:localhost:3478',
-      username: process.env.TURN_USERNAME || 'iris',
-      credential: process.env.TURN_CREDENTIAL || 'syncd'
+      urls: import.meta.env.VITE_TURN_URL || 'turn:localhost:3478',
+      username: import.meta.env.VITE_TURN_USERNAME || 'iris',
+      credential: import.meta.env.VITE_TURN_CREDENTIAL || 'syncd'
     }
   ]
 };
