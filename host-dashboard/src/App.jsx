@@ -451,7 +451,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           </div>
         </div>
 
-{isSelected && isCamera && pc?.remoteStream && (
+{isSelected && isCamera && (
           <div className="device-preview">
             <video
               ref={(el) => registerVideoElement(device.id, el)}
