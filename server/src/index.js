@@ -216,9 +216,10 @@ io.on('connection', (socket) => {
     if (!session) return;
 
     if (role === 'host') {
-      io.to(`session:${sessionId}`).emit('session-ended');
-      sessions.delete(sessionId);
-      console.log(`Session ${sessionId} ended (host disconnected)`);
+      // Host disconnected - notify other devices but DON'T delete session
+      // Allow host to reconnect via rejoin-session
+      io.to(`session:${sessionId}`).emit('host-disconnected');
+      console.log(`Host disconnected from session ${sessionId}, session preserved for reconnection`);
     } else if (deviceId) {
       session.removeDevice(deviceId);
       io.to(`session:${sessionId}`).emit('device-left', { deviceId });
