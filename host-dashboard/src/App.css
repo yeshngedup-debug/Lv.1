@@ -27,6 +27,7 @@
   display: flex;
   align-items: center;
   gap: 1rem;
+  flex-wrap: wrap;
 }
 
 .session-code {
@@ -36,6 +37,71 @@
   background: #1a1a1a;
   border-radius: 8px;
   border: 1px solid #3a3a3a;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  font-size: 0.875rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+}
+
+.connection-status.connected .status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.connection-status.disconnected .status-dot {
+  background: #ef4444;
+}
+
+.connection-status.error .status-dot {
+  background: #f59e0b;
+}
+
+.connection-status.reconnecting .status-dot {
+  background: #f59e0b;
+  animation: pulse 1s infinite;
+}
+
+.error-banner {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #ef4444;
+  color: white;
+  padding: 1rem 2rem;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 1000;
+  cursor: pointer;
+  animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateX(-50%) translateY(-10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.error-message {
+  background: #ef4444;
+  color: white;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  text-align: center;
 }
 
 .main {
@@ -62,11 +128,22 @@ section h2 {
   color: #fff;
 }
 
+section h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-primary {
@@ -75,7 +152,7 @@ section h2 {
   border: none;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   opacity: 0.9;
   border-color: transparent;
 }
@@ -85,7 +162,7 @@ section h2 {
   color: white;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: #4a4a4a;
   border-color: transparent;
 }
@@ -95,7 +172,7 @@ section h2 {
   color: white;
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   background: #dc2626;
   border-color: transparent;
 }
@@ -252,7 +329,7 @@ section h2 {
   border: 2px solid #3a3a3a;
 }
 
-.btn-talk:hover {
+.btn-talk:hover:not(:disabled) {
   background: #4a4a4a;
 }
 
@@ -273,7 +350,7 @@ section h2 {
 
 .camera-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 1rem;
 }
 
@@ -283,6 +360,43 @@ section h2 {
   border-radius: 8px;
   overflow: hidden;
   position: relative;
+}
+
+.camera-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #000;
+}
+
+.camera-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.8));
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+}
+
+.camera-name {
+  color: white;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.live-badge {
+  background: #ef4444;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.625rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  animation: pulse 2s infinite;
 }
 
 .camera-placeholder {
@@ -310,6 +424,7 @@ section h2 {
 
   .session-info {
     flex-direction: column;
+    align-items: center;
   }
 
   .dashboard {
@@ -318,5 +433,9 @@ section h2 {
 
   .join-url {
     flex-direction: column;
+  }
+
+  .camera-grid {
+    grid-template-columns: 1fr;
   }
 }

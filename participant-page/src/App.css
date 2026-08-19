@@ -15,20 +15,20 @@
   font-size: 1rem;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: linear-gradient(135deg, #646cff, #a855f7);
   color: white;
   border: none;
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   opacity: 0.9;
   border-color: transparent;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .btn-secondary {
@@ -36,7 +36,7 @@
   color: white;
 }
 
-.btn-secondary:hover {
+.btn-secondary:hover:not(:disabled) {
   background: #4a4a4a;
   border-color: transparent;
 }
@@ -46,7 +46,7 @@
   color: white;
 }
 
-.btn-danger:hover {
+.btn-danger:hover:not(:disabled) {
   background: #dc2626;
   border-color: transparent;
 }
@@ -209,6 +209,12 @@
   background-clip: text;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
 .role-badge {
   padding: 0.25rem 0.75rem;
   border-radius: 20px;
@@ -217,6 +223,42 @@
   font-weight: 600;
   background: #3a3a3a;
   color: #fff;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  font-size: 0.75rem;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #888;
+}
+
+.connection-status.connected .status-dot {
+  background: #22c55e;
+  box-shadow: 0 0 8px #22c55e;
+}
+
+.connection-status.disconnected .status-dot {
+  background: #ef4444;
+}
+
+.connection-status.error .status-dot {
+  background: #f59e0b;
+}
+
+.connection-status.reconnecting .status-dot {
+  background: #f59e0b;
+  animation: pulse 1s infinite;
 }
 
 .speaker-view {
@@ -346,5 +388,14 @@
 
   .role-icon {
     font-size: 2.5rem;
+  }
+
+  .header-right {
+    gap: 0.5rem;
+  }
+
+  .connection-status {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.625rem;
   }
 }

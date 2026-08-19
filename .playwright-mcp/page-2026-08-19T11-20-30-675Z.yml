@@ -1,0 +1,11 @@
+- generic [ref=f4e4]:
+  - heading "Allow Access" [level=1] [ref=f4e16]
+  - paragraph [ref=f4e6]: Allow audio access to play music from the host
+  - generic [ref=f4e7]:
+    - heading "Audio Access" [level=3] [ref=f4e17]
+    - paragraph [ref=f4e18]: We need audio access to play the host's music on your device
+  - textbox "Your nickname (optional)" [ref=f4e19]
+  - generic [ref=f4e20]:
+    - button "Back" [ref=f4e21] [cursor=pointer]
+    - button "Allow & Join" [ref=f4e22] [cursor=pointer]
+  - paragraph [ref=f4e23]: Your browser will ask for permission on the next step

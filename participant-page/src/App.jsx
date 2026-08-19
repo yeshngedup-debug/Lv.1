@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import { AudioSync } from './audioSync';
+import { requestWakeLock, releaseWakeLock } from './sw';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -16,51 +17,136 @@ function App() {
   const [mediaPermission, setMediaPermission] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [reconnecting, setReconnecting] = useState(false);
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const streamRef = useRef(null);
   const peerConnectionRef = useRef(null);
   const audioSyncRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
+  const wakeLockRef = useRef(null);
 
-  useEffect(() => {
+  const extractSessionIdFromUrl = useCallback(() => {
     const pathParts = window.location.pathname.split('/');
-    const sessionIdFromUrl = pathParts[pathParts.length - 1];
-    if (sessionIdFromUrl && sessionIdFromUrl.length === 8) {
-      setSessionId(sessionIdFromUrl);
-    } else if (pathParts.includes('join')) {
+    // Handle /join/SESSION_ID format
+    if (pathParts.includes('join')) {
       const joinIndex = pathParts.indexOf('join');
       if (joinIndex + 1 < pathParts.length) {
         const id = pathParts[joinIndex + 1];
         if (id && id.length === 8) {
-          setSessionId(id);
+          return id.toUpperCase();
         }
       }
     }
+    // Handle /p/SESSION_ID format (PWA)
+    if (pathParts.includes('p')) {
+      const pIndex = pathParts.indexOf('p');
+      if (pIndex + 1 < pathParts.length) {
+        const id = pathParts[pIndex + 1];
+        if (id && id.length === 8) {
+          return id.toUpperCase();
+        }
+      }
+    }
+    // Handle direct /SESSION_ID format
+    const lastPart = pathParts[pathParts.length - 1];
+    if (lastPart && lastPart.length === 8) {
+      return lastPart.toUpperCase();
+    }
+    return null;
   }, []);
 
   useEffect(() => {
-    const newSocket = io(SOCKET_URL);
+    const id = extractSessionIdFromUrl();
+    if (id) {
+      setSessionId(id);
+    }
+  }, [extractSessionIdFromUrl]);
+
+  const connectSocket = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    const newSocket = io(SOCKET_URL, {
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000
+    });
+
+    newSocket.on('connect', () => {
+      console.log('Connected to server');
+      setConnectionStatus('connected');
+      setReconnecting(false);
+      setError(null);
+
+      // Rejoin session if we had one
+      if (sessionId && isJoined && role) {
+        newSocket.emit('join-session', { sessionId, role, nickname }, (response) => {
+          if (response.error) {
+            console.error('Rejoin failed:', response.error);
+            setIsJoined(false);
+            setRole(null);
+          }
+        });
+      }
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected:', reason);
+      setConnectionStatus('disconnected');
+      if (reason === 'io server disconnect') {
+        setReconnecting(true);
+      }
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection error:', err);
+      setConnectionStatus('error');
+      setError('Failed to connect to server');
+    });
+
+    newSocket.on('reconnect_attempt', (attempt) => {
+      console.log(`Reconnection attempt ${attempt}`);
+      setReconnecting(true);
+    });
+
+    newSocket.on('reconnect', (attempt) => {
+      console.log(`Reconnected after ${attempt} attempts`);
+      setReconnecting(false);
+      setConnectionStatus('connected');
+    });
+
     setSocket(newSocket);
+    return newSocket;
+  }, [SOCKET_URL, sessionId, isJoined, role, nickname]);
+
+  useEffect(() => {
+    const newSocket = connectSocket();
 
     return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       newSocket.disconnect();
     };
-  }, []);
+  }, [connectSocket]);
 
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('connect', () => {
-      console.log('Connected to server');
-      if (audioRef.current && role === 'speaker') {
-        audioSyncRef.current = new AudioSync(audioRef.current, socket);
-      }
-    });
-
     socket.on('playback-started', (data) => {
       setIsPlaying(true);
       setCurrentTrack(data);
+      
+      // Initialize audio sync for speaker role
+      if (audioRef.current && role === 'speaker') {
+        audioSyncRef.current = new AudioSync(audioRef.current, socket);
+      }
     });
 
     socket.on('playback-paused', () => {
@@ -106,18 +192,24 @@ function App() {
   const requestMediaPermission = async (requestedRole) => {
     try {
       if (requestedRole === 'speaker') {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach(track => track.stop());
+        // For speaker, we just need to verify audio context can be created
+        // Actual audio playback doesn't require getUserMedia
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        await audioContext.close();
         setMediaPermission('granted');
         return true;
       } else if (requestedRole === 'camera') {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
-            facingMode: 'environment',
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: 'environment' },
             width: { ideal: 1280 },
             height: { ideal: 720 }
-          }, 
-          audio: true 
+          },
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          }
         });
         streamRef.current = stream;
         if (videoRef.current) {
@@ -129,7 +221,16 @@ function App() {
     } catch (err) {
       console.error('Media permission denied:', err);
       setMediaPermission('denied');
-      setError('Media permission denied. Please allow access to continue.');
+      
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setError('Media permission denied. Please allow access in browser settings and try again.');
+      } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+        setError('No camera/microphone found. Please connect a device and try again.');
+      } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+        setError('Camera/microphone is in use by another application. Please close other apps and try again.');
+      } else {
+        setError(`Media error: ${err.message}. Please try again.`);
+      }
       return false;
     }
   };
@@ -161,7 +262,13 @@ function App() {
     try {
       const pc = new RTCPeerConnection({
         iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' }
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+          {
+            urls: import.meta.env.VITE_TURN_URL || 'turn:localhost:3478',
+            username: import.meta.env.VITE_TURN_USERNAME || 'iris',
+            credential: import.meta.env.VITE_TURN_CREDENTIAL || 'syncd'
+          }
         ]
       });
 
@@ -173,33 +280,49 @@ function App() {
 
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          socket.emit('ice-candidate', { 
-            targetDeviceId: 'host', 
-            candidate: event.candidate 
+          socket.emit('ice-candidate', {
+            targetDeviceId: 'host',
+            candidate: event.candidate
           });
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        console.log('Camera connection state:', pc.connectionState);
+        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+          setError('Camera connection lost. Attempting to reconnect...');
+          setTimeout(() => {
+            if (isJoined && role === 'camera') {
+              stopCameraStreaming();
+              startCameraStreaming();
+            }
+          }, 5000);
         }
       };
 
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
 
-      socket.emit('camera-offer', { 
-        deviceId: socket.id, 
-        offer: pc.localDescription 
+      socket.emit('camera-offer', {
+        deviceId: socket.id,
+        offer: pc.localDescription
       });
 
       socket.on('camera-answer', async ({ answer }) => {
-        await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        try {
+          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (err) {
+          console.error('Failed to set remote description:', err);
+        }
       });
 
       setIsLive(true);
 
-      if ('wakeLock' in navigator) {
-        try {
-          await navigator.wakeLock.request('screen');
-        } catch (err) {
-          console.log('Wake Lock not supported');
-        }
+      // Request wake lock to keep screen on
+      try {
+        wakeLockRef.current = await requestWakeLock();
+      } catch (err) {
+        console.log('Wake Lock not supported');
       }
 
     } catch (err) {
@@ -219,23 +342,25 @@ function App() {
       streamRef.current = null;
     }
 
+    if (wakeLockRef.current) {
+      releaseWakeLock();
+      wakeLockRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
     setIsLive(false);
   };
 
   const leaveSession = () => {
     stopCameraStreaming();
+    if (audioSyncRef.current) {
+      audioSyncRef.current.destroy();
+    }
     socket.disconnect();
     window.location.href = '/';
-  };
-
-  const getAvailableCameras = async () => {
-    try {
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      return devices.filter(device => device.kind === 'videoinput');
-    } catch (err) {
-      console.error('Error enumerating devices:', err);
-      return [];
-    }
   };
 
   if (error) {
@@ -265,8 +390,8 @@ function App() {
             onChange={(e) => setSessionId(e.target.value.toUpperCase())}
             maxLength={8}
           />
-          <button 
-            onClick={() => setSessionId(sessionId)} 
+          <button
+            onClick={() => setSessionId(sessionId)}
             className="btn btn-primary"
             disabled={!sessionId || sessionId.length !== 8}
           >
@@ -318,7 +443,7 @@ function App() {
         <div className="permission-screen">
           <h1>Allow Access</h1>
           <p>
-            {role === 'speaker' 
+            {role === 'speaker'
               ? 'Allow audio access to play music from the host'
               : 'Allow camera and microphone access to stream video'}
           </p>
@@ -339,14 +464,15 @@ function App() {
             placeholder="Your nickname (optional)"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
+            maxLength={50}
           />
 
           <div className="permission-buttons">
             <button onClick={() => setRole(null)} className="btn btn-secondary">
               Back
             </button>
-            <button onClick={joinSession} className="btn btn-primary">
-              Allow & Join
+            <button onClick={joinSession} className="btn btn-primary" disabled={reconnecting}>
+              {reconnecting ? 'Connecting...' : 'Allow & Join'}
             </button>
           </div>
 
@@ -363,7 +489,13 @@ function App() {
       <div className="active-session">
         <header className="session-header">
           <h1>Iris SYNCD</h1>
-          <span className="role-badge">{role}</span>
+          <div className="header-right">
+            <span className="role-badge">{role}</span>
+            <div className={`connection-status ${connectionStatus}`}>
+              <span className="status-dot"></span>
+              {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
+            </div>
+          </div>
         </header>
 
         {role === 'speaker' && (
@@ -391,10 +523,10 @@ function App() {
         {role === 'camera' && (
           <div className="camera-view">
             <div className="video-container">
-              <video 
-                ref={videoRef} 
-                autoPlay 
-                playsInline 
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
                 muted
                 className="camera-preview"
               />
@@ -407,8 +539,8 @@ function App() {
             </div>
 
             <div className="camera-controls">
-              <button 
-                onClick={stopCameraStreaming} 
+              <button
+                onClick={stopCameraStreaming}
                 className="btn btn-danger"
               >
                 Stop Sharing

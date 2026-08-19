@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import io from 'socket.io-client';
 import { PeerConnectionManager } from './webrtc';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
+const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
+const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm'];
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -18,31 +20,104 @@ function App() {
   const [audioUrl, setAudioUrl] = useState(null);
   const [playbackPosition, setPlaybackPosition] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [error, setError] = useState(null);
+  const [reconnecting, setReconnecting] = useState(false);
 
   const audioRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const sourceRef = useRef(null);
   const peerConnectionsRef = useRef(new Map());
+  const videoElementsRef = useRef(new Map());
+  const reconnectTimeoutRef = useRef(null);
+
+  const connectSocket = useCallback(() => {
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+
+    const newSocket = io(SOCKET_URL, {
+      reconnection: true,
+      reconnectionAttempts: 10,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000
+    });
+
+    newSocket.on('connect', () => {
+      console.log('Connected to server');
+      setConnectionStatus('connected');
+      setReconnecting(false);
+      setError(null);
+      
+      // Rejoin session if we had one
+      if (sessionId) {
+        newSocket.emit('rejoin-session', { sessionId }, (response) => {
+          if (response.error) {
+            console.error('Rejoin failed:', response.error);
+            setSessionId(null);
+            setDevices([]);
+            setJoinUrl('');
+          } else {
+            setDevices(response.devices || []);
+            setIsPlaying(response.isPlaying || false);
+            setCurrentTrack(response.currentTrack || null);
+            setPlaybackPosition(response.playbackPosition || 0);
+          }
+        });
+      }
+    });
+
+    newSocket.on('disconnect', (reason) => {
+      console.log('Disconnected:', reason);
+      setConnectionStatus('disconnected');
+      if (reason === 'io server disconnect') {
+        setReconnecting(true);
+      }
+    });
+
+    newSocket.on('connect_error', (err) => {
+      console.error('Connection error:', err);
+      setConnectionStatus('error');
+      setError('Failed to connect to server');
+    });
+
+    newSocket.on('reconnect_attempt', (attempt) => {
+      console.log(`Reconnection attempt ${attempt}`);
+      setReconnecting(true);
+    });
+
+    newSocket.on('reconnect', (attempt) => {
+      console.log(`Reconnected after ${attempt} attempts`);
+      setReconnecting(false);
+      setConnectionStatus('connected');
+    });
+
+    setSocket(newSocket);
+    return newSocket;
+  }, [SOCKET_URL, sessionId]);
 
   useEffect(() => {
-    const newSocket = io(SOCKET_URL);
-    setSocket(newSocket);
+    const newSocket = connectSocket();
 
     return () => {
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       newSocket.disconnect();
     };
-  }, []);
+  }, [connectSocket]);
 
   useEffect(() => {
     if (!socket) return;
 
-    socket.on('connect', () => {
-      console.log('Connected to server');
-    });
-
     socket.on('device-joined', (data) => {
-      setDevices(prev => [...prev, data]);
+      setDevices(prev => {
+        if (prev.some(d => d.id === data.id)) return prev;
+        return [...prev, data];
+      });
+      setError(null);
     });
 
     socket.on('device-left', ({ deviceId }) => {
@@ -52,6 +127,11 @@ function App() {
         pc.close();
         peerConnectionsRef.current.delete(deviceId);
       }
+      const videoEl = videoElementsRef.current.get(deviceId);
+      if (videoEl) {
+        videoEl.srcObject = null;
+        videoElementsRef.current.delete(deviceId);
+      }
     });
 
     socket.on('camera-offer', async ({ deviceId, offer }) => {
@@ -60,19 +140,27 @@ function App() {
 
       pc.onRemoteStream = (stream) => {
         console.log('Received remote stream from', deviceId);
-        const videoElement = document.querySelector(`[data-device-id="${deviceId}"] video`);
+        const videoElement = videoElementsRef.current.get(deviceId);
         if (videoElement) {
           videoElement.srcObject = stream;
         }
       };
 
-      await pc.handleOffer(offer);
+      try {
+        await pc.handleOffer(offer);
+      } catch (err) {
+        console.error('Failed to handle camera offer:', err);
+      }
     });
 
     socket.on('ice-candidate', async ({ candidate, fromDeviceId }) => {
       const pc = peerConnectionsRef.current.get(fromDeviceId);
       if (pc) {
-        await pc.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        try {
+          await pc.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error('Failed to add ICE candidate:', err);
+        }
       }
     });
 
@@ -80,8 +168,37 @@ function App() {
       alert('Session has ended');
       setSessionId(null);
       setDevices([]);
+      setJoinUrl('');
+      setIsPlaying(false);
+      setCurrentTrack(null);
       peerConnectionsRef.current.forEach(pc => pc.close());
       peerConnectionsRef.current.clear();
+      videoElementsRef.current.clear();
+    });
+
+    socket.on('playback-started', (data) => {
+      setIsPlaying(true);
+      setCurrentTrack(data);
+    });
+
+    socket.on('playback-paused', ({ position }) => {
+      setIsPlaying(false);
+      setPlaybackPosition(position);
+    });
+
+    socket.on('playback-resumed', (data) => {
+      setIsPlaying(true);
+      setPlaybackPosition(data.position);
+    });
+
+    socket.on('playback-seeked', ({ position }) => {
+      setPlaybackPosition(position);
+    });
+
+    socket.on('volume-changed', ({ volume }) => {
+      if (audioRef.current) {
+        audioRef.current.volume = volume;
+      }
     });
 
     return () => {
@@ -90,15 +207,26 @@ function App() {
       socket.off('camera-offer');
       socket.off('ice-candidate');
       socket.off('session-ended');
+      socket.off('playback-started');
+      socket.off('playback-paused');
+      socket.off('playback-resumed');
+      socket.off('playback-seeked');
+      socket.off('volume-changed');
       peerConnectionsRef.current.forEach(pc => pc.close());
       peerConnectionsRef.current.clear();
+      videoElementsRef.current.clear();
     };
   }, [socket]);
 
   const createSession = () => {
     if (!socket) return;
+    setError(null);
 
     socket.emit('create-session', (response) => {
+      if (response.error) {
+        setError(response.error);
+        return;
+      }
       setSessionId(response.sessionId);
       setJoinUrl(response.joinUrl);
     });
@@ -106,19 +234,31 @@ function App() {
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (file) {
-      setAudioFile(file);
-      const url = URL.createObjectURL(file);
-      setAudioUrl(url);
+    if (!file) return;
+
+    if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
+      setError('Invalid file type. Please choose an audio file (MP3, WAV, OGG, MP4, WebM).');
+      return;
     }
+
+    if (file.size > MAX_AUDIO_SIZE) {
+      setError('File too large. Maximum size is 50MB.');
+      return;
+    }
+
+    setError(null);
+    setAudioFile(file);
+    const url = URL.createObjectURL(file);
+    setAudioUrl(url);
   };
 
   const startPlayback = () => {
-    if (!socket || !audioUrl) return;
+    if (!socket || !audioUrl || !audioFile) return;
+    setError(null);
 
     socket.emit('start-playing', {
       trackUrl: audioUrl,
-      trackName: audioFile?.name || 'Audio',
+      trackName: audioFile.name,
       duration: audioRef.current?.duration || 0
     });
 
@@ -127,14 +267,12 @@ function App() {
 
   const pausePlayback = () => {
     if (!socket) return;
-
     socket.emit('pause-playing');
     setIsPlaying(false);
   };
 
   const resumePlayback = () => {
     if (!socket) return;
-
     socket.emit('resume-playing');
     setIsPlaying(true);
   };
@@ -149,7 +287,13 @@ function App() {
 
   const startPushToTalk = async () => {
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
+      });
       mediaStreamRef.current = stream;
       audioContextRef.current = new AudioContext();
       sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
@@ -161,7 +305,7 @@ function App() {
       }
     } catch (err) {
       console.error('Error accessing microphone:', err);
-      alert('Could not access microphone. Please ensure microphone permissions are granted.');
+      setError('Could not access microphone. Please ensure microphone permissions are granted.');
     }
   };
 
@@ -193,12 +337,29 @@ function App() {
     setSessionId(null);
     setDevices([]);
     setJoinUrl('');
+    setIsPlaying(false);
+    setCurrentTrack(null);
+    peerConnectionsRef.current.forEach(pc => pc.close());
+    peerConnectionsRef.current.clear();
+    videoElementsRef.current.clear();
   };
 
   const formatTime = (seconds) => {
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const registerVideoElement = (deviceId, element) => {
+    if (element) {
+      videoElementsRef.current.set(deviceId, element);
+      const pc = peerConnectionsRef.current.get(deviceId);
+      if (pc && pc.remoteStream) {
+        element.srcObject = pc.remoteStream;
+      }
+    } else {
+      videoElementsRef.current.delete(deviceId);
+    }
   };
 
   if (!sessionId) {
@@ -212,8 +373,9 @@ function App() {
           <div className="create-session">
             <h2>Create a New Session</h2>
             <p>Start a party session and invite others to join</p>
-            <button onClick={createSession} className="btn btn-primary">
-              Create Session
+            {error && <div className="error-message">{error}</div>}
+            <button onClick={createSession} className="btn btn-primary" disabled={reconnecting}>
+              {reconnecting ? 'Connecting...' : 'Create Session'}
             </button>
           </div>
         </main>
@@ -221,17 +383,26 @@ function App() {
     );
   }
 
+  const cameraDevices = devices.filter(d => d.role === 'camera');
+  const speakerDevices = devices.filter(d => d.role === 'speaker');
+
   return (
     <div className="app">
       <header className="header">
         <h1>Iris SYNCD</h1>
         <div className="session-info">
           <span className="session-code">Session: {sessionId}</span>
-          <button onClick={endSession} className="btn btn-danger btn-small">
+          <div className={`connection-status ${connectionStatus}`}>
+            <span className="status-dot"></span>
+            {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
+          </div>
+          <button onClick={endSession} className="btn btn-danger btn-small" disabled={reconnecting}>
             End Session
           </button>
         </div>
       </header>
+
+      {error && <div className="error-banner" onClick={() => setError(null)}>{error} (click to dismiss)</div>}
 
       <main className="main">
         <div className="dashboard">
@@ -271,6 +442,7 @@ function App() {
                     <button
                       onClick={() => removeDevice(device.id)}
                       className="btn btn-danger btn-small"
+                      disabled={reconnecting}
                     >
                       Remove
                     </button>
@@ -304,6 +476,7 @@ function App() {
                   src={audioUrl}
                   onTimeUpdate={(e) => setPlaybackPosition(e.target.currentTime)}
                   onLoadedMetadata={(e) => setDuration(e.target.duration)}
+                  onError={() => setError('Error loading audio file')}
                 />
 
                 <div className="progress-bar">
@@ -314,6 +487,7 @@ function App() {
                     value={playbackPosition}
                     onChange={handleSeek}
                     step="0.1"
+                    disabled={!duration}
                   />
                   <span className="time">
                     {formatTime(playbackPosition)} / {formatTime(duration)}
@@ -322,15 +496,15 @@ function App() {
 
                 <div className="playback-buttons">
                   {isPlaying ? (
-                    <button onClick={pausePlayback} className="btn btn-primary">
+                    <button onClick={pausePlayback} className="btn btn-primary" disabled={reconnecting}>
                       Pause
                     </button>
                   ) : (
-                    <button onClick={startPlayback} className="btn btn-primary">
+                    <button onClick={startPlayback} className="btn btn-primary" disabled={reconnecting || !audioUrl}>
                       Play
                     </button>
                   )}
-                  <button onClick={resumePlayback} className="btn btn-secondary">
+                  <button onClick={resumePlayback} className="btn btn-secondary" disabled={reconnecting || isPlaying}>
                     Resume
                   </button>
                 </div>
@@ -346,6 +520,7 @@ function App() {
                 onTouchStart={startPushToTalk}
                 onTouchEnd={stopPushToTalk}
                 className={`btn btn-talk ${isTalking ? 'active' : ''}`}
+                disabled={reconnecting}
               >
                 {isTalking ? 'Talking...' : 'Hold to Talk'}
               </button>
@@ -353,21 +528,27 @@ function App() {
           </section>
 
           <section className="camera-section">
-            <h2>Camera Feeds</h2>
+            <h2>Camera Feeds ({cameraDevices.length})</h2>
             <div className="camera-grid">
-              {devices.filter(d => d.role === 'camera').length === 0 ? (
+              {cameraDevices.length === 0 ? (
                 <p className="no-cameras">No camera feeds active</p>
               ) : (
-                devices
-                  .filter(d => d.role === 'camera')
-                  .map(device => (
-                    <div key={device.id} className="camera-feed">
-                      <div className="camera-placeholder">
-                        <span>{device.nickname}</span>
-                        <span className="camera-status">Connecting...</span>
-                      </div>
+                cameraDevices.map(device => (
+                  <div key={device.id} className="camera-feed">
+                    <video
+                      ref={(el) => registerVideoElement(device.id, el)}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="camera-video"
+                      onError={() => console.error(`Video error for ${device.nickname}`)}
+                    />
+                    <div className="camera-overlay">
+                      <span className="camera-name">{device.nickname}</span>
+                      <span className="live-badge">LIVE</span>
                     </div>
-                  ))
+                  </div>
+                ))
               )}
             </div>
           </section>

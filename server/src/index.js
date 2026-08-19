@@ -2,6 +2,7 @@ import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import cors from 'cors';
+import rateLimit from 'express-rate-limit';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { dirname, join } from 'path';
@@ -15,23 +16,36 @@ const __dirname = dirname(__filename);
 
 const app = express();
 const server = createServer(app);
-const ALLOWED_ORIGINS = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()) 
-  : ['http://localhost:5173', 'http://localhost:5174'];
+
+const isProduction = process.env.NODE_ENV === 'production';
+const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
+  : isProduction ? [] : ['http://localhost:5173', 'http://localhost:5174'];
 
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS,
+    origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
     methods: ['GET', 'POST'],
     credentials: true
   }
 });
 
 app.use(cors({
-  origin: ALLOWED_ORIGINS,
+  origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
   credentials: true
 }));
 app.use(express.json());
+
+// Rate limiting for session creation
+const createSessionLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 10, // limit each IP to 10 requests per windowMs
+  message: { error: 'Too many session creation requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false
+});
+
+app.use('/api', createSessionLimiter);
 
 const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
 const participantPagePath = join(__dirname, '../../participant-page/dist');
@@ -106,6 +120,38 @@ io.on('connection', (socket) => {
       joinUrl,
       qrCode: qrCodeDataUrl
     });
+  });
+
+  socket.on('rejoin-session', ({ sessionId }, callback) => {
+    const session = sessions.get(sessionId);
+    if (!session) {
+      return callback({ error: 'Session not found' });
+    }
+
+    if (session.isExpired()) {
+      sessions.delete(sessionId);
+      return callback({ error: 'Session has expired' });
+    }
+
+    // Update host socket ID for reconnection
+    session.hostSocketId = socket.id;
+    socket.join(`session:${sessionId}`);
+    socket.data.sessionId = sessionId;
+    socket.data.role = 'host';
+
+    callback({
+      devices: Array.from(session.devices.values()).map(d => ({
+        id: d.id,
+        role: d.role,
+        nickname: d.nickname
+      })),
+      isPlaying: session.isPlaying,
+      currentTrack: session.currentTrack,
+      playbackPosition: session.playbackPosition,
+      playbackStartedAt: session.playbackStartedAt
+    });
+
+    console.log(`Host reconnected to session: ${sessionId}`);
   });
 
   socket.on('join-session', ({ sessionId, role, nickname }, callback) => {
@@ -293,6 +339,10 @@ io.on('connection', (socket) => {
     const session = sessions.get(sessionId);
     if (!session) return;
 
+    // Validate the device belongs to this session and is a camera
+    const device = session.devices.get(deviceId);
+    if (!device || device.role !== 'camera') return;
+
     const hostSocketId = session.hostSocketId;
     if (hostSocketId) {
       io.to(hostSocketId).emit('camera-offer', { deviceId, offer });
@@ -305,9 +355,9 @@ io.on('connection', (socket) => {
     if (!session) return;
 
     const device = session.devices.get(deviceId);
-    if (device) {
-      io.to(device.socketId).emit('camera-answer', { answer });
-    }
+    if (!device || device.role !== 'camera') return;
+
+    io.to(device.socketId).emit('camera-answer', { answer });
   });
 
   socket.on('ice-candidate', ({ targetDeviceId, candidate }) => {
