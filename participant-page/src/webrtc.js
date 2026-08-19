@@ -1,21 +1,29 @@
-const ICE_SERVERS = {
-  iceServers: [
+export function getIceServers() {
+  const turnUrl = import.meta.env.VITE_TURN_URL;
+  const turnUsername = import.meta.env.VITE_TURN_USERNAME;
+  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
+
+  const baseServers = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' }
-  ]
-};
+  ];
 
-const TURN_SERVERS = {
-  iceServers: [
-    ...ICE_SERVERS.iceServers,
-    {
-      urls: import.meta.env.VITE_TURN_URL || 'turn:localhost:3478',
-      username: import.meta.env.VITE_TURN_USERNAME || 'iris',
-      credential: import.meta.env.VITE_TURN_CREDENTIAL || 'syncd'
-    }
-  ]
-};
+  if (turnUrl && turnUsername && turnCredential) {
+    return {
+      iceServers: [
+        ...baseServers,
+        {
+          urls: turnUrl,
+          username: turnUsername,
+          credential: turnCredential
+        }
+      ]
+    };
+  }
+
+  return { iceServers: baseServers };
+}
 
 export class PeerConnectionManager {
   constructor(socket, targetDeviceId, isInitiator = false) {
@@ -33,7 +41,7 @@ export class PeerConnectionManager {
   }
 
   init() {
-    this.pc = new RTCPeerConnection(TURN_SERVERS);
+    this.pc = new RTCPeerConnection(getIceServers());
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -75,32 +83,16 @@ export class PeerConnectionManager {
   }
 
   async createOffer() {
-    if (!this.isInitiator) {
-      throw new Error('Only initiator can create offer');
-    }
-
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
-
-    this.socket.emit('camera-offer', {
-      deviceId: this.socket.id,
-      offer: this.pc.localDescription
-    });
-
-    return this.pc.localDescription;
+    return offer;
   }
 
   async handleOffer(offer) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
-
-    this.socket.emit('camera-answer', {
-      deviceId: this.targetDeviceId,
-      answer: this.pc.localDescription
-    });
-
-    return this.pc.localDescription;
+    return answer;
   }
 
   async handleAnswer(answer) {
@@ -113,16 +105,4 @@ export class PeerConnectionManager {
       this.pc = null;
     }
   }
-}
-
-export function getIceServers() {
-  const turnUrl = import.meta.env.VITE_TURN_URL;
-  const turnUsername = import.meta.env.VITE_TURN_USERNAME;
-  const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
-
-  if (turnUrl && turnUsername && turnCredential) {
-    return TURN_SERVERS;
-  }
-
-  return ICE_SERVERS;
 }

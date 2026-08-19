@@ -135,19 +135,29 @@ function App() {
     });
 
     socket.on('camera-offer', async ({ deviceId, offer }) => {
+      console.log('Received camera offer from', deviceId);
+      
       const pc = new PeerConnectionManager(socket, deviceId, false);
       peerConnectionsRef.current.set(deviceId, pc);
 
+      // Set up the remote stream handler BEFORE handling the offer
       pc.onRemoteStream = (stream) => {
         console.log('Received remote stream from', deviceId);
         const videoElement = videoElementsRef.current.get(deviceId);
         if (videoElement) {
           videoElement.srcObject = stream;
+          videoElement.play().catch(err => console.error('Video play failed:', err));
         }
+      };
+
+      // Also handle connection state changes
+      pc.onConnectionStateChange = (state) => {
+        console.log(`Connection state for ${deviceId}:`, state);
       };
 
       try {
         await pc.handleOffer(offer);
+        console.log('Camera offer handled successfully for', deviceId);
       } catch (err) {
         console.error('Failed to handle camera offer:', err);
       }
@@ -350,6 +360,14 @@ function App() {
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  const formatFileSize = (bytes) => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+  };
+
   const registerVideoElement = (deviceId, element) => {
     if (element) {
       videoElementsRef.current.set(deviceId, element);
@@ -361,6 +379,19 @@ function App() {
       videoElementsRef.current.delete(deviceId);
     }
   };
+
+  const [selectedDevice, setSelectedDevice] = useState(null);
+  const [fullscreenDevice, setFullscreenDevice] = useState(null);
+  const [deviceVolumes, setDeviceVolumes] = useState({});
+
+  const handleDeviceVolumeChange = (deviceId, volume) => {
+    setDeviceVolumes(prev => ({ ...prev, [deviceId]: volume }));
+    if (socket) {
+      socket.emit('update-device-volume', { deviceId, volume });
+    }
+  };
+
+  const closeFullscreen = () => setFullscreenDevice(null);
 
   if (!sessionId) {
     return (
@@ -386,12 +417,166 @@ function App() {
   const cameraDevices = devices.filter(d => d.role === 'camera');
   const speakerDevices = devices.filter(d => d.role === 'speaker');
 
+  const DeviceCard = ({ device, isSelected, onClick, onVolumeChange, volume }) => {
+    const isCamera = device.role === 'camera';
+    const isSpeaker = device.role === 'speaker';
+    const pc = peerConnectionsRef.current.get(device.id);
+    const isConnected = pc?.connectionState === 'connected';
+
+    return (
+      <article
+        className={`device-card ${isSelected ? 'selected' : ''} ${isCamera ? 'camera' : 'speaker'}`}
+        onClick={onClick}
+        data-device-id={device.id}
+      >
+        <div className="device-card-header">
+          <div className="device-avatar">
+            {isCamera ? '📷' : '🔊'}
+          </div>
+          <div className="device-meta">
+            <h3 className="device-name">{device.nickname}</h3>
+            <div className="device-status">
+              <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}></span>
+              <span className={`device-role-badge ${device.role}`}>
+                {isCamera ? 'Camera' : 'Speaker'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+{isSelected && isCamera && pc?.remoteStream && (
+          <div className="device-preview">
+            <video
+              ref={(el) => registerVideoElement(device.id, el)}
+              autoPlay
+              playsInline
+              muted
+              className="preview-video"
+            />
+            <div className="preview-overlay">
+              <span className="live-dot"></span>
+              LIVE
+            </div>
+          </div>
+        )}
+
+        {isSelected ? (
+          <div className="device-controls">
+            {isCamera && (
+              <div className="control-group">
+                <label>Volume</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={volume ?? 1}
+                  onChange={(e) => onVolumeChange(device.id, parseFloat(e.target.value))}
+                  className="volume-slider"
+                />
+                <span className="volume-value">{Math.round((volume ?? 1) * 100)}%</span>
+              </div>
+            )}
+            {isSpeaker && (
+              <div className="control-group">
+                <label>Volume</label>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={volume ?? 1}
+                  onChange={(e) => onVolumeChange(device.id, parseFloat(e.target.value))}
+                  className="volume-slider"
+                />
+                <span className="volume-value">{Math.round((volume ?? 1) * 100)}%</span>
+              </div>
+            )}
+            <div className="device-actions">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isCamera) setFullscreenDevice(device);
+                }}
+                className="btn btn-secondary btn-sm"
+                disabled={!isCamera}
+              >
+                🔍 Fullscreen
+              </button>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeDevice(device.id);
+                }}
+                className="btn btn-danger btn-sm"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </article>
+    );
+  };
+
+  const renderFullscreenModal = () => {
+    if (!fullscreenDevice) return null;
+    const pc = peerConnectionsRef.current.get(fullscreenDevice.id);
+
+    return (
+      <div className="fullscreen-modal" onClick={closeFullscreen}>
+        <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
+          <header className="fullscreen-header">
+            <h2>{fullscreenDevice.nickname}</h2>
+            <button onClick={closeFullscreen} className="close-btn" aria-label="Close fullscreen">
+              ✕
+            </button>
+          </header>
+          <div className="fullscreen-video-wrapper">
+            <video
+              ref={(el) => registerVideoElement(fullscreenDevice.id, el)}
+              autoPlay
+              playsInline
+              muted
+              className="fullscreen-video"
+            />
+            <div className="fullscreen-overlay">
+              <div className="fullscreen-controls">
+                <div className="control-group">
+                  <label>Volume</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={deviceVolumes[fullscreenDevice.id] ?? 1}
+                    onChange={(e) => handleDeviceVolumeChange(fullscreenDevice.id, parseFloat(e.target.value))}
+                    className="volume-slider"
+                  />
+                  <span className="volume-value">{Math.round((deviceVolumes[fullscreenDevice.id] ?? 1) * 100)}%</span>
+                </div>
+                <span className="connection-badge">
+                  {pc?.connectionState === 'connected' ? '🟢 Connected' : '🔴 Disconnected'}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app">
       <header className="header">
-        <h1>Iris SYNCD</h1>
-        <div className="session-info">
+        <div className="header-left">
+          <h1>Iris SYNCD</h1>
+          <span className="version-badge">v1.0</span>
+        </div>
+        <div className="header-center">
           <span className="session-code">Session: {sessionId}</span>
+        </div>
+        <div className="header-right">
           <div className={`connection-status ${connectionStatus}`}>
             <span className="status-dot"></span>
             {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
@@ -403,11 +588,28 @@ function App() {
       </header>
 
       {error && <div className="error-banner" onClick={() => setError(null)}>{error} (click to dismiss)</div>}
+      {renderFullscreenModal()}
 
       <main className="main">
         <div className="dashboard">
           <section className="join-section">
-            <h2>Join Session</h2>
+            <div className="join-header">
+              <h2>Invite Participants</h2>
+              <div className="join-stats">
+                <span className="stat">
+                  <span className="stat-value">{devices.length}</span>
+                  <span className="stat-label">Connected</span>
+                </span>
+                <span className="stat">
+                  <span className="stat-value">{cameraDevices.length}</span>
+                  <span className="stat-label">Cameras</span>
+                </span>
+                <span className="stat">
+                  <span className="stat-value">{speakerDevices.length}</span>
+                  <span className="stat-label">Speakers</span>
+                </span>
+              </div>
+            </div>
             <div className="qr-container">
               <QRCodeSVG value={joinUrl} size={200} />
             </div>
@@ -417,43 +619,40 @@ function App() {
                 onClick={() => navigator.clipboard.writeText(joinUrl)}
                 className="btn btn-secondary"
               >
-                Copy Link
+                📋 Copy Link
               </button>
             </div>
-            <p className="instructions">
-              Scan QR code or share the link with participants
-            </p>
           </section>
 
           <section className="devices-section">
-            <h2>Connected Devices ({devices.length})</h2>
+            <div className="section-header">
+              <h2>Connected Devices</h2>
+              <p className="section-hint">Click a device to control camera/audio</p>
+            </div>
             {devices.length === 0 ? (
-              <p className="no-devices">No devices connected yet</p>
+              <div className="empty-state">
+                <div className="empty-icon">📱</div>
+                <p>No devices connected yet</p>
+                <p className="empty-hint">Share the QR code or link above to invite participants</p>
+              </div>
             ) : (
-              <ul className="device-list">
+              <div className="device-grid">
                 {devices.map(device => (
-                  <li key={device.id} className="device-item">
-                    <div className="device-info">
-                      <span className="device-name">{device.nickname}</span>
-                      <span className={`device-role ${device.role}`}>
-                        {device.role}
-                      </span>
-                    </div>
-                    <button
-                      onClick={() => removeDevice(device.id)}
-                      className="btn btn-danger btn-small"
-                      disabled={reconnecting}
-                    >
-                      Remove
-                    </button>
-                  </li>
+                  <DeviceCard
+                    key={device.id}
+                    device={device}
+                    isSelected={selectedDevice?.id === device.id}
+                    onClick={() => setSelectedDevice(selectedDevice?.id === device.id ? null : device)}
+                    onVolumeChange={handleDeviceVolumeChange}
+                    volume={deviceVolumes[device.id]}
+                  />
                 ))}
-              </ul>
+              </div>
             )}
           </section>
 
           <section className="audio-section">
-            <h2>Audio Controls</h2>
+            <h2>Audio Broadcast</h2>
 
             <div className="audio-upload">
               <label className="file-upload">
@@ -464,9 +663,14 @@ function App() {
                   style={{ display: 'none' }}
                 />
                 <span className="btn btn-secondary">
-                  {audioFile ? audioFile.name : 'Choose Audio File'}
+                  {audioFile ? audioFile.name : '📁 Choose Audio File'}
                 </span>
               </label>
+              {audioFile && (
+                <span className="file-info">
+                  {audioFile.type} · {formatFileSize(audioFile.size)}
+                </span>
+              )}
             </div>
 
             {audioUrl && (
@@ -479,6 +683,12 @@ function App() {
                   onError={() => setError('Error loading audio file')}
                 />
 
+                <div className="waveform-preview" role="img" aria-label="Audio waveform">
+                  {[...Array(32)].map((_, i) => (
+                    <span key={i} style={{ animationDelay: `${i * 0.05}s` }}></span>
+                  ))}
+                </div>
+
                 <div className="progress-bar">
                   <input
                     type="range"
@@ -488,6 +698,7 @@ function App() {
                     onChange={handleSeek}
                     step="0.1"
                     disabled={!duration}
+                    className="seek-slider"
                   />
                   <span className="time">
                     {formatTime(playbackPosition)} / {formatTime(duration)}
@@ -497,15 +708,15 @@ function App() {
                 <div className="playback-buttons">
                   {isPlaying ? (
                     <button onClick={pausePlayback} className="btn btn-primary" disabled={reconnecting}>
-                      Pause
+                      ⏸️ Pause
                     </button>
                   ) : (
                     <button onClick={startPlayback} className="btn btn-primary" disabled={reconnecting || !audioUrl}>
-                      Play
+                      ▶️ Play
                     </button>
                   )}
                   <button onClick={resumePlayback} className="btn btn-secondary" disabled={reconnecting || isPlaying}>
-                    Resume
+                    ↻ Resume
                   </button>
                 </div>
               </div>
@@ -522,18 +733,19 @@ function App() {
                 className={`btn btn-talk ${isTalking ? 'active' : ''}`}
                 disabled={reconnecting}
               >
-                {isTalking ? 'Talking...' : 'Hold to Talk'}
+                {isTalking ? '🎤 Broadcasting...' : '🎤 Hold to Talk'}
               </button>
             </div>
           </section>
 
-          <section className="camera-section">
-            <h2>Camera Feeds ({cameraDevices.length})</h2>
-            <div className="camera-grid">
-              {cameraDevices.length === 0 ? (
-                <p className="no-cameras">No camera feeds active</p>
-              ) : (
-                cameraDevices.map(device => (
+          {cameraDevices.length > 0 && (
+            <section className="camera-section">
+              <div className="section-header">
+                <h2>Live Camera Feeds</h2>
+                <p className="section-hint">Click any feed for fullscreen view</p>
+              </div>
+              <div className="camera-grid">
+                {cameraDevices.map(device => (
                   <div key={device.id} className="camera-feed">
                     <video
                       ref={(el) => registerVideoElement(device.id, el)}
@@ -548,10 +760,10 @@ function App() {
                       <span className="live-badge">LIVE</span>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       </main>
     </div>

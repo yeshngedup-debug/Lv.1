@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
+import { getIceServers } from './webrtc';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -260,17 +261,7 @@ function App() {
     if (!streamRef.current || !socket) return;
 
     try {
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          {
-            urls: import.meta.env.VITE_TURN_URL || 'turn:localhost:3478',
-            username: import.meta.env.VITE_TURN_USERNAME || 'iris',
-            credential: import.meta.env.VITE_TURN_CREDENTIAL || 'syncd'
-          }
-        ]
-      });
+      const pc = new RTCPeerConnection(getIceServers());
 
       peerConnectionRef.current = pc;
 
