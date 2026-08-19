@@ -16,8 +16,8 @@ export default defineConfig({
         background_color: '#242424',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/',
-        start_url: '/',
+        scope: '/p/',
+        start_url: '/p/',
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -41,7 +41,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/localhost:3001\/.*/i,
+            urlPattern: /^https:\/\/.*\.onrender\.com\/.*/i,
             handler: 'NetworkFirst',
             options: {
               cacheName: 'api-cache',
@@ -55,6 +55,7 @@ export default defineConfig({
       }
     })
   ],
+  base: '/p/',
   server: {
     port: 5174,
     proxy: {

@@ -25,8 +25,15 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
+const participantPagePath = join(__dirname, '../../participant-page/dist');
+
+app.use('/host', express.static(hostDashboardPath));
+app.use('/p', express.static(participantPagePath));
+app.use(express.static(hostDashboardPath));
+
 const PORT = process.env.PORT || 3001;
-const BASE_URL = process.env.BASE_URL || `http://localhost:${PORT}`;
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `http://localhost:${PORT}`;
 const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT) || 3600000; // 1 hour default
 
 const sessions = new Map();
@@ -333,6 +340,22 @@ app.get('/api/sessions/:sessionId', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', sessions: sessions.size });
+});
+
+app.get('/join/:sessionId', (req, res) => {
+  res.sendFile(join(participantPagePath, 'index.html'));
+});
+
+app.get('/host/*', (req, res) => {
+  res.sendFile(join(hostDashboardPath, 'index.html'));
+});
+
+app.get('/p/*', (req, res) => {
+  res.sendFile(join(participantPagePath, 'index.html'));
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(join(hostDashboardPath, 'index.html'));
 });
 
 setInterval(() => {

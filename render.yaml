@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: iris-syncd
+    env: node
+    plan: free
+    buildCommand: npm install --workspaces && npm run build -w host-dashboard && npm run build -w participant-page
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: CORS_ORIGIN
+        value: '*'
+      - key: SESSION_TIMEOUT
+        value: '3600000'

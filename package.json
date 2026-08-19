@@ -10,8 +10,9 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w host-dashboard\" \"npm run dev -w participant-page\"",
-    "build": "npm run build -w host-dashboard && npm run build -w participant-page",
-    "start": "npm run start -w server"
+    "build": "npm install && npm run build -w host-dashboard && npm run build -w participant-page",
+    "start": "node server/src/index.js",
+    "render-build": "npm install --workspaces && npm run build -w host-dashboard && npm run build -w participant-page"
   },
   "devDependencies": {
     "concurrently": "^8.2.2"

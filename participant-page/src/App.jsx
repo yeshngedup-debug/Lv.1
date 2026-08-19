@@ -28,6 +28,14 @@ function App() {
     const sessionIdFromUrl = pathParts[pathParts.length - 1];
     if (sessionIdFromUrl && sessionIdFromUrl.length === 8) {
       setSessionId(sessionIdFromUrl);
+    } else if (pathParts.includes('join')) {
+      const joinIndex = pathParts.indexOf('join');
+      if (joinIndex + 1 < pathParts.length) {
+        const id = pathParts[joinIndex + 1];
+        if (id && id.length === 8) {
+          setSessionId(id);
+        }
+      }
     }
   }, []);
 
