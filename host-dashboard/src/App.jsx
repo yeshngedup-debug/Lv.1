@@ -114,8 +114,8 @@ function App() {
 
     socket.on('device-joined', (data) => {
       setDevices(prev => {
-        if (prev.some(d => d.id === data.id)) return prev;
-        return [...prev, data];
+        if (prev.some(d => d.id === data.deviceId)) return prev;
+        return [...prev, { ...data, id: data.deviceId }];
       });
       setError(null);
     });
