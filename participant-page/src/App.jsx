@@ -3,7 +3,16 @@ import io from 'socket.io-client';
 import { AudioSync } from './audioSync';
 import './App.css';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
+const getSocketUrl = () => {
+  const hostname = window.location.hostname;
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return 'http://localhost:3001';
+  }
+  // For production/deployment
+  return `https://${hostname}:${window.location.port}`;
+};
+
+const SOCKET_URL = getSocketUrl();
 
 function App() {
   const [socket, setSocket] = useState(null);
