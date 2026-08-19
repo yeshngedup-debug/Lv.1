@@ -134,9 +134,15 @@ function App() {
       }
     });
 
-    socket.on('camera-offer', async ({ deviceId, offer }) => {
+socket.on('camera-offer', async ({ deviceId, offer }) => {
       console.log('Received camera offer from', deviceId);
-      
+
+      const existingPc = peerConnectionsRef.current.get(deviceId);
+      if (existingPc) {
+        existingPc.close();
+        peerConnectionsRef.current.delete(deviceId);
+      }
+
       const pc = new PeerConnectionManager(socket, deviceId, false);
       peerConnectionsRef.current.set(deviceId, pc);
 
@@ -167,7 +173,7 @@ function App() {
       const pc = peerConnectionsRef.current.get(fromDeviceId);
       if (pc) {
         try {
-          await pc.pc.addIceCandidate(new RTCIceCandidate(candidate));
+          await pc.addIceCandidate(candidate);
         } catch (err) {
           console.error('Failed to add ICE candidate:', err);
         }

@@ -34,8 +34,8 @@ export class PeerConnectionManager {
     this.localStream = null;
     this.remoteStream = null;
     this.onRemoteStream = null;
-    this.onIceCandidate = null;
     this.onConnectionStateChange = null;
+    this._iceCandidateHandler = null;
 
     this.init();
   }
@@ -66,13 +66,18 @@ export class PeerConnectionManager {
       }
     };
 
-    this.socket.on('ice-candidate', async ({ candidate }) => {
+    this._iceCandidateHandler = async ({ candidate }) => {
       try {
         await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch (err) {
         console.error('Error adding ICE candidate:', err);
       }
-    });
+    };
+    this.socket.on('ice-candidate', this._iceCandidateHandler);
+  }
+
+  async addIceCandidate(candidate) {
+    await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
   }
 
   async addLocalStream(stream) {
@@ -100,9 +105,15 @@ export class PeerConnectionManager {
   }
 
   close() {
+    if (this._iceCandidateHandler) {
+      this.socket.off('ice-candidate', this._iceCandidateHandler);
+      this._iceCandidateHandler = null;
+    }
     if (this.pc) {
       this.pc.close();
       this.pc = null;
     }
+    this.localStream = null;
+    this.remoteStream = null;
   }
 }

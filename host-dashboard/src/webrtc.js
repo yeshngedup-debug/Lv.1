@@ -1,4 +1,4 @@
-function getIceServers() {
+export function getIceServers() {
   const turnUrl = import.meta.env.VITE_TURN_URL;
   const turnUsername = import.meta.env.VITE_TURN_USERNAME;
   const turnCredential = import.meta.env.VITE_TURN_CREDENTIAL;
@@ -34,8 +34,8 @@ export class PeerConnectionManager {
     this.localStream = null;
     this.remoteStream = null;
     this.onRemoteStream = null;
-    this.onIceCandidate = null;
     this.onConnectionStateChange = null;
+    this._iceCandidateHandler = null;
 
     this.init();
   }
@@ -65,6 +65,19 @@ export class PeerConnectionManager {
         this.onConnectionStateChange(this.pc.connectionState);
       }
     };
+
+    this._iceCandidateHandler = async ({ candidate }) => {
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (err) {
+        console.error('Error adding ICE candidate:', err);
+      }
+    };
+    this.socket.on('ice-candidate', this._iceCandidateHandler);
+  }
+
+  async addIceCandidate(candidate) {
+    await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
   }
 
   async addLocalStream(stream) {
@@ -75,32 +88,16 @@ export class PeerConnectionManager {
   }
 
   async createOffer() {
-    if (!this.isInitiator) {
-      throw new Error('Only initiator can create offer');
-    }
-
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
-
-    this.socket.emit('camera-offer', {
-      deviceId: this.socket.id,
-      offer: this.pc.localDescription
-    });
-
-    return this.pc.localDescription;
+    return offer;
   }
 
   async handleOffer(offer) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
-
-    this.socket.emit('camera-answer', {
-      deviceId: this.targetDeviceId,
-      answer: this.pc.localDescription
-    });
-
-    return this.pc.localDescription;
+    return answer;
   }
 
   async handleAnswer(answer) {
@@ -108,9 +105,15 @@ export class PeerConnectionManager {
   }
 
   close() {
+    if (this._iceCandidateHandler) {
+      this.socket.off('ice-candidate', this._iceCandidateHandler);
+      this._iceCandidateHandler = null;
+    }
     if (this.pc) {
       this.pc.close();
       this.pc = null;
     }
+    this.localStream = null;
+    this.remoteStream = null;
   }
 }

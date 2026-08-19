@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
-import { getIceServers } from './webrtc';
+import { PeerConnectionManager } from './webrtc';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -187,6 +187,14 @@ function App() {
       if (audioSyncRef.current) {
         audioSyncRef.current.destroy();
       }
+      if (peerConnectionRef.current) {
+        peerConnectionRef.current.close();
+        peerConnectionRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current = null;
+      }
     };
   }, [socket, role]);
 
@@ -261,26 +269,13 @@ function App() {
     if (!streamRef.current || !socket) return;
 
     try {
-      const pc = new RTCPeerConnection(getIceServers());
+      const pc = new PeerConnectionManager(socket, 'host', true);
 
-      peerConnectionRef.current = pc;
+      await pc.addLocalStream(streamRef.current);
 
-      streamRef.current.getTracks().forEach(track => {
-        pc.addTrack(track, streamRef.current);
-      });
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('ice-candidate', {
-            targetDeviceId: 'host',
-            candidate: event.candidate
-          });
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        console.log('Camera connection state:', pc.connectionState);
-        if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      pc.onConnectionStateChange = (state) => {
+        console.log('Camera connection state:', state);
+        if (state === 'failed' || state === 'disconnected') {
           setError('Camera connection lost. Attempting to reconnect...');
           setTimeout(() => {
             if (isJoined && role === 'camera') {
@@ -292,20 +287,22 @@ function App() {
       };
 
       const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
 
       socket.emit('camera-offer', {
         deviceId: socket.id,
-        offer: pc.localDescription
+        offer
       });
 
-      socket.on('camera-answer', async ({ answer }) => {
+      const handleAnswer = async ({ answer }) => {
         try {
-          await pc.setRemoteDescription(new RTCSessionDescription(answer));
+          await pc.handleAnswer(answer);
         } catch (err) {
           console.error('Failed to set remote description:', err);
         }
-      });
+      };
+      socket.on('camera-answer', handleAnswer);
+
+      peerConnectionRef.current = pc;
 
       setIsLive(true);
 
