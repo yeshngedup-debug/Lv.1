@@ -149,21 +149,21 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
       // Set up the remote stream handler BEFORE handling the offer
       pc.onRemoteStream = (stream) => {
-        console.log('Received remote stream from', deviceId, 'Tracks:', stream.getTracks().length);
+        console.log('Received remote stream from', deviceId, 'Tracks:', stream.getTracks().length, 'Track details:', stream.getTracks().map(t => ({ kind: t.kind, id: t.id, enabled: t.enabled, readyState: t.readyState, muted: t.muted })));
         const videoElement = videoElementsRef.current.get(deviceId);
         if (videoElement) {
           console.log('Setting video source for', deviceId);
           // Ensure we have a video track before assigning
           const videoTracks = stream.getVideoTracks();
           if (videoTracks.length > 0) {
-            console.log('Video track found:', videoTracks[0].label);
+            console.log('Video track found:', videoTracks[0].label, 'settings:', videoTracks[0].getSettings());
           } else {
             console.warn('No video tracks found in remote stream!');
           }
           videoElement.srcObject = stream;
           videoElement.play().catch(err => console.error('Video play failed:', err));
         } else {
-          console.warn('No video element found for', deviceId);
+          console.warn('No video element found for', deviceId, 'Available elements:', Array.from(videoElementsRef.current.keys()));
         }
       };
 

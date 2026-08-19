@@ -222,7 +222,14 @@ const requestMediaPermission = async (requestedRole) => {
             autoGainControl: true
           }
         });
-        console.log('Got user media stream:', stream.id, 'tracks:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState })));
+        console.log('Got user media stream:', stream.id, 'tracks:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState, muted: t.muted })));
+        const videoTracks = stream.getVideoTracks();
+        if (videoTracks.length === 0) {
+          console.error('NO VIDEO TRACKS IN STREAM!');
+        } else {
+          console.log('Video track settings:', videoTracks[0].getSettings());
+          console.log('Video track constraints:', videoTracks[0].getConstraints());
+        }
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -302,6 +309,7 @@ const requestMediaPermission = async (requestedRole) => {
       };
 
       const offer = await pc.createOffer();
+      console.log('Participant emitting camera-offer, offer type:', offer?.type);
 
       socket.emit('camera-offer', {
         deviceId: currentDeviceId,

@@ -99,11 +99,15 @@ export class PeerConnectionManager {
   }
 
   async handleOffer(offer) {
+    console.log('Host handleOffer called, offer type:', offer?.type);
+    console.log('Host offer SDP has video:', offer?.sdp?.includes('m=video'));
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+    console.log('Host remoteDescription set, transceivers:', this.pc.getTransceivers().map(t => ({ mid: t.mid, direction: t.direction, senderTrack: t.sender.track?.kind, receiverTrack: t.receiver.track?.kind })));
     await this.drainIceQueue();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
     console.log('Host created answer, localDescription:', this.pc.localDescription?.type);
+    console.log('Host answer SDP has video:', this.pc.localDescription?.sdp?.includes('m=video'));
     return this.pc.localDescription;
   }
 

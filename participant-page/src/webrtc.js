@@ -118,11 +118,15 @@ export class PeerConnectionManager {
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
     console.log('Participant created offer, localDescription:', this.pc.localDescription?.type);
+    console.log('Participant offer SDP has video:', this.pc.localDescription?.sdp?.includes('m=video'));
+    console.log('Participant localDescription transceivers:', this.pc.getTransceivers().map(t => ({ mid: t.mid, direction: t.direction, senderTrack: t.sender.track?.kind, receiverTrack: t.receiver.track?.kind })));
     return this.pc.localDescription;
   }
 
   async handleOffer(offer) {
+    console.log('Participant handleOffer called, offer type:', offer?.type);
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+    console.log('Participant remoteDescription set, transceivers:', this.pc.getTransceivers().map(t => ({ mid: t.mid, direction: t.direction, senderTrack: t.sender.track?.kind, receiverTrack: t.receiver.track?.kind })));
     await this.drainIceQueue();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
