@@ -35,7 +35,6 @@ export class PeerConnectionManager {
     this.remoteStream = null;
     this.onRemoteStream = null;
     this.onConnectionStateChange = null;
-    this._iceCandidateHandler = null;
 
     this.init();
   }
@@ -65,32 +64,10 @@ export class PeerConnectionManager {
         this.onConnectionStateChange(this.pc.connectionState);
       }
     };
-
-    this._iceCandidateHandler = async ({ candidate }) => {
-      try {
-        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (err) {
-        console.error('Error adding ICE candidate:', err);
-      }
-    };
-    this.socket.on('ice-candidate', this._iceCandidateHandler);
   }
 
   async addIceCandidate(candidate) {
     await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
-  }
-
-  async addLocalStream(stream) {
-    this.localStream = stream;
-    stream.getTracks().forEach(track => {
-      this.pc.addTrack(track, stream);
-    });
-  }
-
-  async createOffer() {
-    const offer = await this.pc.createOffer();
-    await this.pc.setLocalDescription(offer);
-    return this.pc.localDescription;
   }
 
   async handleOffer(offer) {
@@ -100,15 +77,7 @@ export class PeerConnectionManager {
     return this.pc.localDescription;
   }
 
-  async handleAnswer(answer) {
-    await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
-  }
-
   close() {
-    if (this._iceCandidateHandler) {
-      this.socket.off('ice-candidate', this._iceCandidateHandler);
-      this._iceCandidateHandler = null;
-    }
     if (this.pc) {
       this.pc.close();
       this.pc = null;

@@ -82,7 +82,9 @@ export class PeerConnectionManager {
 
   async addLocalStream(stream) {
     this.localStream = stream;
+    console.log('Adding local stream tracks:', stream.getTracks().length);
     stream.getTracks().forEach(track => {
+      console.log('Adding track:', track.kind);
       this.pc.addTrack(track, stream);
     });
   }

@@ -148,11 +148,14 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
       // Set up the remote stream handler BEFORE handling the offer
       pc.onRemoteStream = (stream) => {
-        console.log('Received remote stream from', deviceId);
+        console.log('Received remote stream from', deviceId, 'Tracks:', stream.getTracks().length);
         const videoElement = videoElementsRef.current.get(deviceId);
         if (videoElement) {
+          console.log('Setting video source for', deviceId);
           videoElement.srcObject = stream;
           videoElement.play().catch(err => console.error('Video play failed:', err));
+        } else {
+          console.warn('No video element found for', deviceId);
         }
       };
 
