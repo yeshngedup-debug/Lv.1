@@ -162,7 +162,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       };
 
       try {
-        await pc.handleOffer(offer);
+        const answer = await pc.handleOffer(offer);
+        socket.emit('camera-answer', { deviceId, answer: pc.pc.localDescription });
         console.log('Camera offer handled successfully for', deviceId);
       } catch (err) {
         console.error('Failed to handle camera offer:', err);

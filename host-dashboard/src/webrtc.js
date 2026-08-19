@@ -90,14 +90,14 @@ export class PeerConnectionManager {
   async createOffer() {
     const offer = await this.pc.createOffer();
     await this.pc.setLocalDescription(offer);
-    return offer;
+    return this.pc.localDescription;
   }
 
   async handleOffer(offer) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
-    return answer;
+    return this.pc.localDescription;
   }
 
   async handleAnswer(answer) {
