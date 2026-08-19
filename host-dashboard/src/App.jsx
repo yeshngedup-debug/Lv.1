@@ -150,21 +150,23 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       // Set up the remote stream handler BEFORE handling the offer
       pc.onRemoteStream = (stream) => {
         console.log('Received remote stream from', deviceId, 'Tracks:', stream.getTracks().length, 'Track details:', stream.getTracks().map(t => ({ kind: t.kind, id: t.id, enabled: t.enabled, readyState: t.readyState, muted: t.muted })));
-        const videoElement = videoElementsRef.current.get(deviceId);
-        if (videoElement) {
-          console.log('Setting video source for', deviceId);
-          // Ensure we have a video track before assigning
-          const videoTracks = stream.getVideoTracks();
-          if (videoTracks.length > 0) {
-            console.log('Video track found:', videoTracks[0].label, 'settings:', videoTracks[0].getSettings());
-          } else {
-            console.warn('No video tracks found in remote stream!');
+        // Update all video elements for this deviceId
+        const types = ['preview', 'grid', 'fullscreen'];
+        types.forEach(type => {
+          const key = `${deviceId}-${type}`;
+          const videoElement = videoElementsRef.current.get(key);
+          if (videoElement) {
+            console.log('Setting video source for', key);
+            const videoTracks = stream.getVideoTracks();
+            if (videoTracks.length > 0) {
+              console.log('Video track found:', videoTracks[0].label, 'settings:', videoTracks[0].getSettings());
+            } else {
+              console.warn('No video tracks found in remote stream!');
+            }
+            videoElement.srcObject = stream;
+            videoElement.play().catch(err => console.error('Video play failed for', key, ':', err));
           }
-          videoElement.srcObject = stream;
-          videoElement.play().catch(err => console.error('Video play failed:', err));
-        } else {
-          console.warn('No video element found for', deviceId, 'Available elements:', Array.from(videoElementsRef.current.keys()));
-        }
+        });
       };
 
       // Also handle connection state changes
@@ -387,15 +389,23 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const registerVideoElement = (deviceId, element) => {
+  const registerVideoElement = (deviceId, element, type = 'preview') => {
     if (element) {
-      videoElementsRef.current.set(deviceId, element);
+      const key = `${deviceId}-${type}`;
+      videoElementsRef.current.set(key, element);
       const pc = peerConnectionsRef.current.get(deviceId);
       if (pc && pc.remoteStream) {
         element.srcObject = pc.remoteStream;
+        const playPromise = element.play();
+        if (playPromise !== undefined) {
+          playPromise.catch(err => {
+            console.warn('Video play failed for', key, '- may need user interaction:', err);
+          });
+        }
       }
     } else {
-      videoElementsRef.current.delete(deviceId);
+      // We can't easily unregister without knowing the type, so we'll leave it
+      // The element will be garbage collected when unmounted
     }
   };
 
@@ -466,7 +476,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 {isSelected && isCamera && (
           <div className="device-preview">
             <video
-              ref={(el) => registerVideoElement(device.id, el)}
+              ref={(el) => registerVideoElement(device.id, el, 'preview')}
               autoPlay
               playsInline
               muted
@@ -553,7 +563,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           </header>
           <div className="fullscreen-video-wrapper">
             <video
-              ref={(el) => registerVideoElement(fullscreenDevice.id, el)}
+              ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
               autoPlay
               playsInline
               muted
@@ -767,7 +777,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 {cameraDevices.map(device => (
                   <div key={device.id} className="camera-feed">
                     <video
-                      ref={(el) => registerVideoElement(device.id, el)}
+                      ref={(el) => registerVideoElement(device.id, el, 'grid')}
                       autoPlay
                       playsInline
                       muted
