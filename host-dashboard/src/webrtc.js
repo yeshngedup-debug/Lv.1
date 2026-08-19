@@ -35,6 +35,7 @@ export class PeerConnectionManager {
     this.remoteStream = null;
     this.onRemoteStream = null;
     this.onConnectionStateChange = null;
+    this.iceQueue = [];
 
     this.init();
   }
@@ -52,6 +53,7 @@ export class PeerConnectionManager {
     };
 
     this.pc.ontrack = (event) => {
+      console.log('Host received track:', event.track.kind, event.streams.length);
       this.remoteStream = event.streams[0];
       if (this.onRemoteStream) {
         this.onRemoteStream(this.remoteStream);
@@ -59,7 +61,7 @@ export class PeerConnectionManager {
     };
 
     this.pc.onconnectionstatechange = () => {
-      console.log('Connection state:', this.pc.connectionState);
+      console.log('Host connection state:', this.pc.connectionState);
       if (this.onConnectionStateChange) {
         this.onConnectionStateChange(this.pc.connectionState);
       }
@@ -67,13 +69,41 @@ export class PeerConnectionManager {
   }
 
   async addIceCandidate(candidate) {
-    await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+    if (!candidate) return;
+
+    if (!this.pc.remoteDescription) {
+      console.log('Host queuing ICE candidate because remote description is not set yet');
+      this.iceQueue.push(candidate);
+      return;
+    }
+
+    try {
+      await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      console.log('Host successfully added ICE candidate');
+    } catch (err) {
+      console.error('Host error adding ICE candidate:', err);
+    }
+  }
+
+  async drainIceQueue() {
+    console.log('Host draining queued ICE candidates:', this.iceQueue.length);
+    while (this.iceQueue.length > 0) {
+      const candidate = this.iceQueue.shift();
+      try {
+        await this.pc.addIceCandidate(new RTCIceCandidate(candidate));
+        console.log('Host successfully added queued ICE candidate');
+      } catch (err) {
+        console.error('Host error adding queued ICE candidate:', err);
+      }
+    }
   }
 
   async handleOffer(offer) {
     await this.pc.setRemoteDescription(new RTCSessionDescription(offer));
+    await this.drainIceQueue();
     const answer = await this.pc.createAnswer();
     await this.pc.setLocalDescription(answer);
+    console.log('Host created answer, localDescription:', this.pc.localDescription?.type);
     return this.pc.localDescription;
   }
 
@@ -84,5 +114,6 @@ export class PeerConnectionManager {
     }
     this.localStream = null;
     this.remoteStream = null;
+    this.iceQueue = [];
   }
 }
