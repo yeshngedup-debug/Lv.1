@@ -135,7 +135,8 @@ function App() {
     });
 
 socket.on('camera-offer', async ({ deviceId, offer }) => {
-      console.log('Received camera offer from', deviceId);
+      console.log('Received camera offer from', deviceId, 'Offer type:', offer?.type);
+      console.log('Offer SDP preview:', offer?.sdp?.substring(0, 200));
 
       const existingPc = peerConnectionsRef.current.get(deviceId);
       if (existingPc) {
@@ -152,6 +153,13 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
         const videoElement = videoElementsRef.current.get(deviceId);
         if (videoElement) {
           console.log('Setting video source for', deviceId);
+          // Ensure we have a video track before assigning
+          const videoTracks = stream.getVideoTracks();
+          if (videoTracks.length > 0) {
+            console.log('Video track found:', videoTracks[0].label);
+          } else {
+            console.warn('No video tracks found in remote stream!');
+          }
           videoElement.srcObject = stream;
           videoElement.play().catch(err => console.error('Video play failed:', err));
         } else {
@@ -166,6 +174,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
       try {
         const answer = await pc.handleOffer(offer);
+        console.log('Created answer for', deviceId, 'Answer type:', pc.pc.localDescription?.type);
         socket.emit('camera-answer', { deviceId, answer: pc.pc.localDescription });
         console.log('Camera offer handled successfully for', deviceId);
       } catch (err) {

@@ -199,7 +199,7 @@ function App() {
     };
   }, [socket, role]);
 
-  const requestMediaPermission = async (requestedRole) => {
+const requestMediaPermission = async (requestedRole) => {
     try {
       if (requestedRole === 'speaker') {
         // For speaker, we just need to verify audio context can be created
@@ -209,6 +209,7 @@ function App() {
         setMediaPermission('granted');
         return true;
       } else if (requestedRole === 'camera') {
+        console.log('Requesting camera/microphone permissions...');
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: { ideal: 'environment' },
@@ -221,9 +222,11 @@ function App() {
             autoGainControl: true
           }
         });
+        console.log('Got user media stream:', stream.id, 'tracks:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState })));
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(err => console.error('Local preview play failed:', err));
         }
         setMediaPermission('granted');
         return true;
@@ -231,7 +234,7 @@ function App() {
     } catch (err) {
       console.error('Media permission denied:', err);
       setMediaPermission('denied');
-      
+
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
         setError('Media permission denied. Please allow access in browser settings and try again.');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
@@ -280,6 +283,10 @@ function App() {
       const pc = new PeerConnectionManager(socket, 'host', true);
 
       await pc.addLocalStream(streamRef.current);
+
+      // Debug: log what tracks we're sending
+      const sentTracks = streamRef.current.getTracks();
+      console.log('Sending tracks:', sentTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
 
       pc.onConnectionStateChange = (state) => {
         console.log('Camera connection state:', state);
