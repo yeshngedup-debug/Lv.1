@@ -1,0 +1,19 @@
+{
+  "name": "iris-syncd",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-Device Party Speaker & Camera Dashboard",
+  "workspaces": [
+    "server",
+    "host-dashboard",
+    "participant-page"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w host-dashboard\" \"npm run dev -w participant-page\"",
+    "build": "npm run build -w host-dashboard && npm run build -w participant-page",
+    "start": "npm run start -w server"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

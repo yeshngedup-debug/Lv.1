@@ -1,0 +1,17 @@
+{
+  "name": "Iris SYNCD",
+  "short_name": "Iris SYNCD",
+  "description": "Join a party session as a speaker or camera",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#242424",
+  "theme_color": "#646cff",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
