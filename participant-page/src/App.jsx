@@ -20,6 +20,7 @@ function App() {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [reconnecting, setReconnecting] = useState(false);
+  const deviceIdRef = useRef(null);
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -256,6 +257,7 @@ function App() {
         return;
       }
 
+      deviceIdRef.current = response.deviceId;
       setIsJoined(true);
       setSessionId(sessionId);
 
@@ -267,6 +269,12 @@ function App() {
 
   const startCameraStreaming = async () => {
     if (!streamRef.current || !socket) return;
+
+    const currentDeviceId = deviceIdRef.current;
+    if (!currentDeviceId) {
+      setError('Not connected to session');
+      return;
+    }
 
     try {
       const pc = new PeerConnectionManager(socket, 'host', true);
@@ -289,7 +297,7 @@ function App() {
       const offer = await pc.createOffer();
 
       socket.emit('camera-offer', {
-        deviceId: socket.id,
+        deviceId: currentDeviceId,
         offer
       });
 
