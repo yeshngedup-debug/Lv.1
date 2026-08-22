@@ -1438,3 +1438,31 @@ section h3 {
   background: var(--accent-magenta);
   animation: livePulse 1.4s ease-in-out infinite;
 }
+
+/* ============ CCTV GRID CAMERA SWITCHER ============ */
+.camera-switch-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(217, 70, 239, 0.15);
+  border: 1px solid rgba(217, 70, 239, 0.3);
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--accent-magenta);
+  cursor: pointer;
+  transition: all var(--speed-fast) var(--ease);
+  white-space: nowrap;
+}
+.camera-switch-indicator:hover {
+  background: rgba(217, 70, 239, 0.25);
+  border-color: var(--accent-magenta);
+  transform: scale(1.03);
+}
+.camera-switch-indicator .cam-label {
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

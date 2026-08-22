@@ -986,6 +986,89 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           </>
         )}
 
+        {/* ============ CCTV GRID PAGE ============ */}
+        {activePage === 'cctv' && (
+          <>
+            <div className="col-span-12">
+              <div className="page-heading">
+                <Video size={22} style={{ color: 'var(--accent-magenta)' }} />
+                <div>
+                  <h2>CCTV Camera Grid</h2>
+                  <p>Monitor all live cameras, switch between camera sources, and zoom for detail.</p>
+                </div>
+              </div>
+            </div>
+
+            {cameraDevices.length === 0 ? (
+              <div className="col-span-12">
+                <div className="gridline-card empty-state" style={{ minHeight: '300px' }}>
+                  <div className="empty-icon"><Video size={48} style={{ color: 'var(--text-tertiary)' }} /></div>
+                  <p>No camera devices connected</p>
+                  <p className="empty-hint">Connect cameras from participant devices to view them here</p>
+                </div>
+              </div>
+            ) : (
+              <div className="col-span-12">
+                <div className="gridline-card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Video size={18} className="card-title-icon" style={{ color: 'var(--accent-magenta)' }} />
+                      <h3 className="card-title">Live Camera Grid</h3>
+                    </div>
+                    <span className="card-badge">{cameraDevices.length} CAMERAS LIVE</span>
+                  </div>
+                  <div className="camera-feeds-grid">
+                    {cameraDevices.map(device => {
+                      const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
+                      const listening = listeningDevices.has(device.id);
+                      const cameras = camEntry.cameras || [];
+                      const activeIdx = cameras.findIndex(c => c.id === camEntry.activeCameraId);
+                      const currentCamLabel = activeIdx >= 0 ? cameras[activeIdx]?.label : 'Default';
+
+                      return (
+                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
+                          <video
+                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="camera-feed-video"
+                            onError={() => console.error(`Video error for ${device.nickname}`)}
+                          />
+                          <div className="camera-feed-bar">
+                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
+                                className={`tile-mic-btn ${listening ? 'on' : ''}`}
+                                title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+                              >
+                                {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
+                              </button>
+                              {listening && <span style={{ color: 'var(--accent-amber)', fontSize: '0.65rem' }}>LISTEN</span>}
+                              {cameras.length > 1 && (
+                                <span
+                                  className="camera-switch-indicator"
+                                  title="Click to cycle cameras"
+                                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(device, 1); }}
+                                >
+                                  <span className="cam-label">{currentCamLabel}</span>
+                                  <ChevronRight size={12} style={{ color: 'var(--accent-magenta)' }} />
+                                </span>
+                              )}
+                              <span className="live-indicator-pill">LIVE</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ============ DEVICE FLEET PAGE ============ */}
         {activePage === 'fleet' && (
           <>
