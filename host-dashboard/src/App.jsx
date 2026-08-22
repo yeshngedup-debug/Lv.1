@@ -636,7 +636,23 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               </button>
             </div>
           </div>
-        ) : null}
+        ) : (
+          isCamera && (
+            <div className="device-quick-actions">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setFullscreenDevice(device);
+                }}
+                className="btn btn-primary btn-sm"
+                title="View camera fullscreen"
+              >
+                <Video size={14} />
+                <span>View Camera</span>
+              </button>
+            </div>
+          )
+        )}
       </article>
     );
   };

@@ -1466,3 +1466,18 @@ section h3 {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* ============ DEVICE CARD QUICK ACTIONS ============ */
+.device-quick-actions {
+  display: flex;
+  justify-content: center;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border-top: 1px solid var(--border);
+}
+.device-quick-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  width: 100%;
+  justify-content: center;
+}
