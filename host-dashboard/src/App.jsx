@@ -823,7 +823,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
             </div>
 
             {/* Live Camera Grid (Overview page) */}
-            {cameraDevices.length > 0 && (
+            {activePage === 'overview' && cameraDevices.length > 0 && (
               <div className="col-span-12">
                 <div className="gridline-card">
                   <div className="card-header">
@@ -850,31 +850,23 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                             className="camera-feed-video"
                             onError={() => console.error(`Video error for ${device.nickname}`)}
                           />
-
-                          <div className="tile-top-bar">
-                            {camEntry.cameras.length > 1 && (
-                              <span className="tile-cam-count">CAM {camIdx + 1}/{camEntry.cameras.length}</span>
-                            )}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
-                              className={`tile-mic-btn ${listening ? 'on' : ''}`}
-                              title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
-                            >
-                              {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
-                            </button>
-                          </div>
-
-                          <div className="tile-expand-hint">
-                            <Expand size={16} />
-                            <span>Zoom</span>
-                          </div>
-
                           <div className="camera-feed-bar">
                             <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-                            <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
+                                className={`tile-mic-btn ${listening ? 'on' : ''}`}
+                                title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+                              >
+                                {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
+                              </button>
+                              {listening && <span style={{ color: 'var(--accent-amber)', fontSize: '0.65rem' }}>LISTEN</span>}
+                              <span className="live-indicator-pill">LIVE</span>
+                            </div>
                           </div>
                         </div>
                       );
+
                     })}
                   </div>
                 </div>
@@ -1135,6 +1127,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           </>
         )}
       </div>
+
     </GridlineShell>
   );
 }

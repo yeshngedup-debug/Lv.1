@@ -136,6 +136,13 @@ export function GridlineShell({
                 {!sidebarCollapsed && <span>Dashboard Overview</span>}
               </button>
               <button
+                className={`nav-item ${activeTab === 'cctv' ? 'active' : ''}`}
+                onClick={() => handleTabClick('cctv')}
+              >
+                <Video size={18} />
+                {!sidebarCollapsed && <span>CCTV Grid</span>}
+              </button>
+              <button
                 className={`nav-item ${activeTab === 'audio' ? 'active' : ''}`}
                 onClick={() => handleTabClick('audio')}
               >
