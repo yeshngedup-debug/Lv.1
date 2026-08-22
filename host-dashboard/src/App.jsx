@@ -2,8 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import io from 'socket.io-client';
 import {
-  Radio, Video, Speaker, Music, Mic, Copy, Check, Power,
-  Maximize2, Trash2, Upload, Play, Pause, RotateCcw, Monitor, Sparkles
+  Radio, Video, Speaker, Music, Mic, MicOff, Copy, Check, Power,
+  Maximize2, Trash2, Upload, Play, Pause, RotateCcw, Monitor, Sparkles,
+  Volume2, ChevronLeft, ChevronRight, Expand, Users
 } from 'lucide-react';
 import { PeerConnectionManager } from './webrtc';
 import { GridlineShell } from './components/GridlineShell';
@@ -33,11 +34,16 @@ function App() {
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [error, setError] = useState(null);
   const [reconnecting, setReconnecting] = useState(false);
+  const [deviceCamerasMap, setDeviceCamerasMap] = useState({});
+  const [listeningDevices, setListeningDevices] = useState(() => new Set());
+  const [localVolumes, setLocalVolumes] = useState({});
 
   const audioRef = useRef(null);
   const mediaStreamRef = useRef(null);
   const audioContextRef = useRef(null);
   const sourceRef = useRef(null);
+  const listeningSetRef = useRef(new Set());
+  const volumesMapRef = useRef({});
   const peerConnectionsRef = useRef(new Map());
   const videoElementsRef = useRef(new Map());
   const reconnectTimeoutRef = useRef(null);
@@ -133,6 +139,11 @@ function App() {
 
     socket.on('device-left', ({ deviceId }) => {
       setDevices(prev => prev.filter(d => d.id !== deviceId));
+      setDeviceCamerasMap(prev => {
+        const next = { ...prev };
+        delete next[deviceId];
+        return next;
+      });
       const pc = peerConnectionsRef.current.get(deviceId);
       if (pc) {
         pc.close();
@@ -143,6 +154,21 @@ function App() {
         videoEl.srcObject = null;
         videoElementsRef.current.delete(deviceId);
       }
+    });
+
+    socket.on('device-cameras-update', ({ deviceId, cameras }) => {
+      console.log('Camera list for', deviceId, ':', cameras);
+      setDeviceCamerasMap(prev => ({
+        ...prev,
+        [deviceId]: { cameras, activeCameraId: prev[deviceId]?.activeCameraId || null }
+      }));
+    });
+
+    socket.on('camera-active-update', ({ deviceId, cameraId }) => {
+      setDeviceCamerasMap(prev => ({
+        ...prev,
+        [deviceId]: { ...(prev[deviceId] || { cameras: [] }), activeCameraId: cameraId }
+      }));
     });
 
 socket.on('camera-offer', async ({ deviceId, offer }) => {
@@ -423,6 +449,59 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [fullscreenDevice, setFullscreenDevice] = useState(null);
   const [deviceVolumes, setDeviceVolumes] = useState({});
+  const [activePage, setActivePage] = useState('overview');
+
+  useEffect(() => {
+    listeningSetRef.current = listeningDevices;
+    volumesMapRef.current = localVolumes;
+    videoElementsRef.current.forEach((el, key) => {
+      const dashIdx = key.lastIndexOf('-');
+      if (dashIdx === -1) return;
+      const type = key.slice(dashIdx + 1);
+      if (!['preview', 'grid', 'fullscreen'].includes(type)) return;
+      const deviceId = key.slice(0, dashIdx);
+      const listening = listeningDevices.has(deviceId);
+      el.muted = !listening;
+      el.volume = localVolumes[deviceId] ?? 1;
+      if (listening) {
+        el.play().catch(() => {});
+      }
+    });
+  }, [listeningDevices, localVolumes]);
+
+  const toggleListen = (deviceId) => {
+    setListeningDevices(prev => {
+      const next = new Set(prev);
+      if (next.has(deviceId)) {
+        next.delete(deviceId);
+      } else {
+        next.add(deviceId);
+      }
+      return next;
+    });
+  };
+
+  const setLocalVolume = (deviceId, volume) => {
+    setLocalVolumes(prev => ({ ...prev, [deviceId]: volume }));
+  };
+
+  const switchDeviceCamera = (deviceId, cameraId) => {
+    if (!socket || !cameraId) return;
+    socket.emit('switch-camera', { deviceId, cameraId });
+    setDeviceCamerasMap(prev => ({
+      ...prev,
+      [deviceId]: { ...(prev[deviceId] || { cameras: [] }), activeCameraId: cameraId }
+    }));
+  };
+
+  const cycleDeviceCamera = (device, direction) => {
+    const entry = deviceCamerasMap[device.id];
+    if (!entry || !entry.cameras || entry.cameras.length < 2) return;
+    const ids = entry.cameras.map(c => c.id);
+    const currentIdx = Math.max(0, ids.indexOf(entry.activeCameraId));
+    const nextIdx = (currentIdx + direction + ids.length) % ids.length;
+    switchDeviceCamera(device.id, ids[nextIdx]);
+  };
 
   const handleDeviceVolumeChange = (deviceId, volume) => {
     setDeviceVolumes(prev => ({ ...prev, [deviceId]: volume }));
@@ -565,16 +644,29 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const renderFullscreenModal = () => {
     if (!fullscreenDevice) return null;
     const pc = peerConnectionsRef.current.get(fullscreenDevice.id);
+    const camEntry = deviceCamerasMap[fullscreenDevice.id] || { cameras: [], activeCameraId: null };
+    const cameras = camEntry.cameras || [];
+    const listening = listeningDevices.has(fullscreenDevice.id);
+    const vol = localVolumes[fullscreenDevice.id] ?? 1;
 
     return (
       <div className="fullscreen-modal" onClick={closeFullscreen}>
         <div className="fullscreen-content" onClick={(e) => e.stopPropagation()}>
           <header className="fullscreen-header">
-            <h2>{fullscreenDevice.nickname}</h2>
+            <div className="fullscreen-title-group">
+              <span className={`status-dot-inline ${pc?.connectionState === 'connected' ? 'online' : 'offline'}`} />
+              <h2>{fullscreenDevice.nickname}</h2>
+              {cameras.length > 0 && (
+                <span className="camera-count-badge">
+                  CAM {Math.max(1, cameras.findIndex(c => c.id === camEntry.activeCameraId) + 1)}/{cameras.length}
+                </span>
+              )}
+            </div>
             <button onClick={closeFullscreen} className="close-btn" aria-label="Close fullscreen">
               <Maximize2 size={24} style={{ transform: 'rotate(45deg)' }} />
             </button>
           </header>
+
           <div className="fullscreen-video-wrapper">
             <video
               ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
@@ -583,27 +675,78 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               muted
               className="fullscreen-video"
             />
+
+            {cameras.length > 1 && (
+              <>
+                <button
+                  className="zoom-nav-btn left"
+                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(fullscreenDevice, -1); }}
+                  aria-label="Previous camera"
+                >
+                  <ChevronLeft size={26} />
+                </button>
+                <button
+                  className="zoom-nav-btn right"
+                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(fullscreenDevice, 1); }}
+                  aria-label="Next camera"
+                >
+                  <ChevronRight size={26} />
+                </button>
+              </>
+            )}
+
             <div className="fullscreen-overlay">
               <div className="fullscreen-controls">
+                <button
+                  onClick={() => toggleListen(fullscreenDevice.id)}
+                  className={`listen-toggle ${listening ? 'on' : ''}`}
+                  title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+                >
+                  {listening ? <Volume2 size={15} /> : <MicOff size={15} />}
+                  <span>{listening ? 'Listening' : 'Listen'}</span>
+                </button>
+
                 <div className="control-group">
-                  <label>Volume</label>
+                  <label>Vol</label>
                   <input
                     type="range"
                     min="0"
                     max="1"
-                    step="0.1"
-                    value={deviceVolumes[fullscreenDevice.id] ?? 1}
-                    onChange={(e) => handleDeviceVolumeChange(fullscreenDevice.id, parseFloat(e.target.value))}
+                    step="0.05"
+                    value={vol}
+                    onChange={(e) => setLocalVolume(fullscreenDevice.id, parseFloat(e.target.value))}
                     className="volume-slider"
                   />
-                  <span className="volume-value">{Math.round((deviceVolumes[fullscreenDevice.id] ?? 1) * 100)}%</span>
+                  <span className="volume-value">{Math.round(vol * 100)}%</span>
                 </div>
+
                 <span className="connection-badge">
                   {pc?.connectionState === 'connected' ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
             </div>
           </div>
+
+          {cameras.length > 0 && (
+            <footer className="camera-strip">
+              {cameras.map((cam, idx) => {
+                const isActive = camEntry.activeCameraId ? camEntry.activeCameraId === cam.id : idx === 0;
+                return (
+                  <button
+                    key={cam.id || idx}
+                    className={`camera-chip ${isActive ? 'active' : ''}`}
+                    onClick={() => switchDeviceCamera(fullscreenDevice.id, cam.id)}
+                    title={cam.label}
+                  >
+                    <Video size={13} />
+                    <span className="chip-index">{idx + 1}</span>
+                    <span className="chip-label">{cam.label || `Camera ${idx + 1}`}</span>
+                    {isActive && <span className="chip-active-dot" />}
+                  </button>
+                );
+              })}
+            </footer>
+          )}
         </div>
       </div>
     );
@@ -619,106 +762,149 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       speakersCount={speakerDevices.length}
       onEndSession={endSession}
       joinUrl={joinUrl}
+      activeTab={activePage}
+      onTabChange={setActivePage}
     >
       {error && <div className="error-banner" onClick={() => setError(null)}>{error} (click to dismiss)</div>}
       {renderFullscreenModal()}
 
       <div className="gridline-dashboard-grid">
-        {/* Metric Overview Row */}
-        <div className="col-span-12">
-          <div className="metrics-row">
-            <div className="metric-box">
-              <span className="metric-label">FLEET DEVICES</span>
-              <span className="metric-value">{devices.length}</span>
-            </div>
-            <div className="metric-box">
-              <span className="metric-label">LIVE CAMERAS</span>
-              <span className="metric-value" style={{ color: 'var(--accent-magenta)' }}>{cameraDevices.length}</span>
-            </div>
-            <div className="metric-box">
-              <span className="metric-label">ACTIVE SPEAKERS</span>
-              <span className="metric-value" style={{ color: 'var(--accent-cyan)' }}>{speakerDevices.length}</span>
-            </div>
-          </div>
-        </div>
-
-        {/* Invite & QR Panel */}
-        <div className="col-span-4">
-          <div className="gridline-card">
-            <div className="card-header">
-              <div className="card-title-group">
-                <Radio size={18} className="card-title-icon" />
-                <h3 className="card-title">Invite Participants</h3>
-              </div>
-              <span className="card-badge">QR ACCESS</span>
-            </div>
-
-            <div className="qr-flex-wrapper">
-              <div className="qr-box">
-                <QRCodeSVG value={joinUrl} size={150} />
-              </div>
-              <div className="invite-info-col">
-                <div className="url-input-group">
-                  <input type="text" value={joinUrl} readOnly />
-                  <button
-                    onClick={() => navigator.clipboard.writeText(joinUrl)}
-                    className="gridline-btn-ghost btn-sm"
-                  >
-                    <Copy size={14} />
-                  </button>
+        {activePage === 'overview' && (
+          <>
+            {/* Metric Overview Row */}
+            <div className="col-span-12">
+              <div className="metrics-row">
+                <div className="metric-box">
+                  <span className="metric-label">FLEET DEVICES</span>
+                  <span className="metric-value">{devices.length}</span>
                 </div>
-                <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                  Scan QR code or copy session URL to connect speakers & cameras.
-                </p>
+                <div className="metric-box">
+                  <span className="metric-label">LIVE CAMERAS</span>
+                  <span className="metric-value" style={{ color: 'var(--accent-magenta)' }}>{cameraDevices.length}</span>
+                </div>
+                <div className="metric-box">
+                  <span className="metric-label">ACTIVE SPEAKERS</span>
+                  <span className="metric-value" style={{ color: 'var(--accent-cyan)' }}>{speakerDevices.length}</span>
+                </div>
               </div>
             </div>
-          </div>
-        </div>
 
-        {/* Device Fleet Section */}
-        <div className="col-span-8">
-          <div className="gridline-card">
-            <div className="card-header">
-              <div className="card-title-group">
-                <Monitor size={18} className="card-title-icon" />
-                <h3 className="card-title">Connected Device Fleet</h3>
+            {/* Invite & QR Panel */}
+            <div className="col-span-4">
+              <div className="gridline-card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Radio size={18} className="card-title-icon" />
+                    <h3 className="card-title">Invite Participants</h3>
+                  </div>
+                  <span className="card-badge">QR ACCESS</span>
+                </div>
+
+                <div className="qr-flex-wrapper">
+                  <div className="qr-box">
+                    <QRCodeSVG value={joinUrl} size={150} />
+                  </div>
+                  <div className="invite-info-col">
+                    <div className="url-input-group">
+                      <input type="text" value={joinUrl} readOnly />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(joinUrl)}
+                        className="gridline-btn-ghost btn-sm"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                      Scan QR code or copy session URL to connect speakers & cameras.
+                    </p>
+                  </div>
+                </div>
               </div>
-              <span className="card-badge">{devices.length} ONLINE</span>
             </div>
 
-            {devices.length === 0 ? (
-              <div className="empty-state">
-                <div className="empty-icon"><Monitor size={28} /></div>
-                <p>No devices connected yet</p>
-                <p className="empty-hint">Share the QR code or link to invite participants</p>
-              </div>
-            ) : (
-              <div className="device-fleet-grid">
-                {devices.map(device => (
-                  <DeviceCard
-                    key={device.id}
-                    device={device}
-                    isSelected={selectedDevice?.id === device.id}
-                    onClick={() => setSelectedDevice(selectedDevice?.id === device.id ? null : device)}
-                    onVolumeChange={handleDeviceVolumeChange}
-                    volume={deviceVolumes[device.id]}
-                  />
-                ))}
+            {/* Live Camera Grid (Overview page) */}
+            {cameraDevices.length > 0 && (
+              <div className="col-span-12">
+                <div className="gridline-card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Video size={18} className="card-title-icon" style={{ color: 'var(--accent-magenta)' }} />
+                      <h3 className="card-title">Live Camera Grid</h3>
+                    </div>
+                    <span className="card-badge">{cameraDevices.length} CAMERAS LIVE</span>
+                  </div>
+                  <div className="camera-feeds-grid">
+                    {cameraDevices.map(device => {
+                      const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
+                      const listening = listeningDevices.has(device.id);
+                      const camIdx = camEntry.activeCameraId
+                        ? Math.max(0, camEntry.cameras.findIndex(c => c.id === camEntry.activeCameraId))
+                        : 0;
+                      return (
+                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
+                          <video
+                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="camera-feed-video"
+                            onError={() => console.error(`Video error for ${device.nickname}`)}
+                          />
+
+                          <div className="tile-top-bar">
+                            {camEntry.cameras.length > 1 && (
+                              <span className="tile-cam-count">CAM {camIdx + 1}/{camEntry.cameras.length}</span>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
+                              className={`tile-mic-btn ${listening ? 'on' : ''}`}
+                              title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+                            >
+                              {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
+                            </button>
+                          </div>
+
+                          <div className="tile-expand-hint">
+                            <Expand size={16} />
+                            <span>Zoom</span>
+                          </div>
+
+                          <div className="camera-feed-bar">
+                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
+                            <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             )}
-          </div>
-        </div>
+          </>
+        )}
 
-        {/* Audio Broadcast Section */}
-        <div className="col-span-12">
-          <div className="gridline-card">
-            <div className="card-header">
-              <div className="card-title-group">
-                <Music size={18} className="card-title-icon" />
-                <h3 className="card-title">Audio Broadcast & Push-to-Talk</h3>
+        {/* ============ AUDIO BROADCAST PAGE ============ */}
+        {activePage === 'audio' && (
+          <>
+            <div className="col-span-12">
+              <div className="page-heading">
+                <Music size={22} />
+                <div>
+                  <h2>Audio Broadcast</h2>
+                  <p>Upload tracks, control playback and talk to your fleet live.</p>
+                </div>
               </div>
-              <span className="card-badge">LIVE AUDIO CONTROL</span>
             </div>
+
+            <div className="col-span-12">
+              <div className="gridline-card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Music size={18} className="card-title-icon" />
+                    <h3 className="card-title">Broadcast & Push-to-Talk</h3>
+                  </div>
+                  <span className="card-badge">LIVE AUDIO CONTROL</span>
+                </div>
 
             <div className="audio-upload">
               <label className="file-upload">
@@ -804,39 +990,149 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               </button>
             </div>
           </div>
-        </div>
+            </div>
+          </>
+        )}
 
-        {/* Live Camera Grid Section */}
-        {cameraDevices.length > 0 && (
-          <div className="col-span-12">
-            <div className="gridline-card">
-              <div className="card-header">
-                <div className="card-title-group">
-                  <Video size={18} className="card-title-icon" style={{ color: 'var(--accent-magenta)' }} />
-                  <h3 className="card-title">Live Camera Grid</h3>
+        {/* ============ DEVICE FLEET PAGE ============ */}
+        {activePage === 'fleet' && (
+          <>
+            <div className="col-span-12">
+              <div className="page-heading">
+                <Users size={22} />
+                <div>
+                  <h2>Device Fleet</h2>
+                  <p>Manage connected speakers & cameras, adjust volumes and monitor status.</p>
                 </div>
-                <span className="card-badge">{cameraDevices.length} CAMERAS LIVE</span>
-              </div>
-              <div className="camera-feeds-grid">
-                {cameraDevices.map(device => (
-                  <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
-                    <video
-                      ref={(el) => registerVideoElement(device.id, el, 'grid')}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="camera-feed-video"
-                      onError={() => console.error(`Video error for ${device.nickname}`)}
-                    />
-                    <div className="camera-feed-bar">
-                      <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-                      <span className="live-indicator-pill">LIVE</span>
-                    </div>
-                  </div>
-                ))}
               </div>
             </div>
-          </div>
+
+            {/* Invite & QR Panel */}
+            <div className="col-span-4">
+              <div className="gridline-card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Radio size={18} className="card-title-icon" />
+                    <h3 className="card-title">Invite Participants</h3>
+                  </div>
+                  <span className="card-badge">QR ACCESS</span>
+                </div>
+
+                <div className="qr-flex-wrapper">
+                  <div className="qr-box">
+                    <QRCodeSVG value={joinUrl} size={150} />
+                  </div>
+                  <div className="invite-info-col">
+                    <div className="url-input-group">
+                      <input type="text" value={joinUrl} readOnly />
+                      <button
+                        onClick={() => navigator.clipboard.writeText(joinUrl)}
+                        className="gridline-btn-ghost btn-sm"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+                    <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                      Scan QR code or copy session URL to connect speakers & cameras.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Device Fleet */}
+            <div className="col-span-8">
+              <div className="gridline-card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Monitor size={18} className="card-title-icon" />
+                    <h3 className="card-title">Connected Device Fleet</h3>
+                  </div>
+                  <span className="card-badge">{devices.length} ONLINE</span>
+                </div>
+
+                {devices.length === 0 ? (
+                  <div className="empty-state">
+                    <div className="empty-icon"><Monitor size={28} /></div>
+                    <p>No devices connected yet</p>
+                    <p className="empty-hint">Share the QR code or link to invite participants</p>
+                  </div>
+                ) : (
+                  <div className="device-fleet-grid">
+                    {devices.map(device => (
+                      <DeviceCard
+                        key={device.id}
+                        device={device}
+                        isSelected={selectedDevice?.id === device.id}
+                        onClick={() => setSelectedDevice(selectedDevice?.id === device.id ? null : device)}
+                        onVolumeChange={handleDeviceVolumeChange}
+                        volume={deviceVolumes[device.id]}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Fleet Camera Wall */}
+            {cameraDevices.length > 0 && (
+              <div className="col-span-12">
+                <div className="gridline-card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Video size={18} className="card-title-icon" style={{ color: 'var(--accent-magenta)' }} />
+                      <h3 className="card-title">Fleet Camera Wall</h3>
+                    </div>
+                    <span className="card-badge">{cameraDevices.length} CAMERAS LIVE</span>
+                  </div>
+                  <div className="camera-feeds-grid">
+                    {cameraDevices.map(device => {
+                      const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
+                      const listening = listeningDevices.has(device.id);
+                      const camIdx = camEntry.activeCameraId
+                        ? Math.max(0, camEntry.cameras.findIndex(c => c.id === camEntry.activeCameraId))
+                        : 0;
+                      return (
+                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
+                          <video
+                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
+                            autoPlay
+                            playsInline
+                            muted
+                            className="camera-feed-video"
+                            onError={() => console.error(`Video error for ${device.nickname}`)}
+                          />
+
+                          <div className="tile-top-bar">
+                            {camEntry.cameras.length > 1 && (
+                              <span className="tile-cam-count">CAM {camIdx + 1}/{camEntry.cameras.length}</span>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
+                              className={`tile-mic-btn ${listening ? 'on' : ''}`}
+                              title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+                            >
+                              {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
+                            </button>
+                          </div>
+
+                          <div className="tile-expand-hint">
+                            <Expand size={16} />
+                            <span>Zoom</span>
+                          </div>
+
+                          <div className="camera-feed-bar">
+                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
+                            <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         )}
       </div>
     </GridlineShell>

@@ -28,6 +28,8 @@ function App() {
   const [currentTrack, setCurrentTrack] = useState(null);
   const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [reconnecting, setReconnecting] = useState(false);
+  const [availableCameras, setAvailableCameras] = useState([]);
+  const [activeCameraId, setActiveCameraId] = useState(null);
   const deviceIdRef = useRef(null);
 
   const videoRef = useRef(null);
@@ -200,6 +202,11 @@ function App() {
       console.log('Host stopped talking');
     });
 
+    socket.on('switch-camera', async ({ cameraId }) => {
+      console.log('Host requested switch to camera:', cameraId);
+      await switchToCamera(cameraId);
+    });
+
     return () => {
       socket.off('playback-started');
       socket.off('playback-paused');
@@ -314,6 +321,26 @@ const requestMediaPermission = async (requestedRole) => {
           console.log('Video track constraints:', videoTracks[0].getConstraints());
         }
         streamRef.current = stream;
+
+        // Enumerate all cameras now that permission is granted (labels become readable)
+        try {
+          const allDevices = await navigator.mediaDevices.enumerateDevices();
+          const cams = allDevices
+            .filter(d => d.kind === 'videoinput')
+            .map(d => ({ id: d.deviceId, label: d.label || 'Camera' }))
+            .filter(c => c.id);
+          setAvailableCameras(cams);
+          const activeTrack = stream.getVideoTracks()[0];
+          if (activeTrack) {
+            const settings = activeTrack.getSettings();
+            const matched = cams.find(c => c.id === settings.deviceId);
+            setActiveCameraId(matched ? matched.id : (cams[0]?.id || null));
+          }
+          console.log('Available cameras:', cams.length);
+        } catch (enumErr) {
+          console.warn('Could not enumerate cameras:', enumErr);
+        }
+
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(err => console.error('Local preview play failed:', err));
@@ -425,6 +452,27 @@ const requestMediaPermission = async (requestedRole) => {
       peerConnectionRef.current = pc;
       setIsLive(true);
 
+      // Tell the host which cameras this device exposes and which one is active
+      try {
+        const cams = availableCameras.length > 0
+          ? availableCameras
+          : await navigator.mediaDevices.enumerateDevices()
+              .then(all => all.filter(d => d.kind === 'videoinput').map(d => ({ id: d.deviceId, label: d.label || 'Camera' })))
+              .then(list => { setAvailableCameras(list); return list; });
+        socket.emit('device-cameras', { cameras: cams });
+        let active = activeCameraId;
+        if (!active && streamRef.current?.getVideoTracks()[0]) {
+          const settings = streamRef.current.getVideoTracks()[0].getSettings();
+          active = cams.find(c => c.id === settings.deviceId)?.id || cams[0]?.id || null;
+          setActiveCameraId(active);
+        }
+        if (active) {
+          socket.emit('camera-switched', { cameraId: active });
+        }
+      } catch (err) {
+        console.warn('Failed to report camera list:', err);
+      }
+
       try {
         wakeLockRef.current = await requestWakeLock();
       } catch (err) {
@@ -464,6 +512,73 @@ const requestMediaPermission = async (requestedRole) => {
 
     setIsLive(false);
   };
+
+  const switchToCamera = async (cameraId) => {
+    if (!cameraId || !socket || !deviceIdRef.current) return;
+
+    try {
+      console.log('Switching to camera:', cameraId);
+      const newStream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          deviceId: { exact: cameraId },
+          width: { ideal: 1280, max: 1920 },
+          height: { ideal: 720, max: 1080 }
+        },
+        audio: false
+      });
+      const newTrack = newStream.getVideoTracks()[0];
+      if (!newTrack) throw new Error('No video track on requested camera');
+
+      const oldStream = streamRef.current;
+      const oldVideoTracks = oldStream ? oldStream.getVideoTracks() : [];
+
+      // Swap the track on the live WebRTC connection without renegotiation
+      let replaced = false;
+      const pc = peerConnectionRef.current;
+      if (pc?.pc) {
+        const sender = pc.pc.getSenders().find(s => s.track && s.track.kind === 'video');
+        if (sender) {
+          await sender.replaceTrack(newTrack);
+          replaced = true;
+        }
+      }
+
+      // Keep the local stream + preview in sync
+      if (oldStream) {
+        oldVideoTracks.forEach(t => oldStream.removeTrack(t));
+        oldStream.addTrack(newTrack);
+        streamRef.current = oldStream;
+      } else {
+        streamRef.current = newStream;
+      }
+      oldVideoTracks.forEach(t => t.stop());
+
+      if (videoRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+        videoRef.current.play().catch(() => {});
+      }
+
+      setActiveCameraId(cameraId);
+      socket.emit('camera-switched', { cameraId });
+
+      // Fallback: full renegotiation if hot-swap wasn't possible
+      if (!replaced) {
+        console.warn('replaceTrack unavailable, restarting stream');
+        if (stateRef.current.isJoined) {
+          startCameraStreaming();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to switch camera:', err);
+    }
+  };
+
+  useEffect(() => {
+    if (!socket || role !== 'camera' || !isJoined) return;
+    const handler = ({ cameraId }) => switchToCamera(cameraId);
+    socket.on('switch-camera', handler);
+    return () => socket.off('switch-camera', handler);
+  }, [socket, role, isJoined]);
 
   const leaveSession = () => {
     stopCameraStreaming();
@@ -674,6 +789,20 @@ const requestMediaPermission = async (requestedRole) => {
             </div>
 
             <div className="camera-controls">
+              {availableCameras.length > 1 && (
+                <div className="camera-switcher">
+                  {availableCameras.map((cam, idx) => (
+                    <button
+                      key={cam.id}
+                      onClick={() => switchToCamera(cam.id)}
+                      className={`camera-chip ${activeCameraId === cam.id ? 'active' : ''}`}
+                      title={cam.label}
+                    >
+                      CAM {idx + 1}
+                    </button>
+                  ))}
+                </div>
+              )}
               <button
                 onClick={stopCameraStreaming}
                 className="btn btn-danger"

@@ -28,11 +28,18 @@ export function GridlineShell({
   camerasCount = 0,
   speakersCount = 0,
   onEndSession,
-  joinUrl
+  joinUrl,
+  activeTab = 'overview',
+  onTabChange
 }) {
   const [copied, setCopied] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [activeTab, setActiveTab] = useState('overview');
+
+  const handleTabClick = (tab) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
 
   const handleCopyLink = () => {
     if (!joinUrl) return;
@@ -123,21 +130,21 @@ export function GridlineShell({
             <nav className="sidebar-nav">
               <button
                 className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`}
-                onClick={() => setActiveTab('overview')}
+                onClick={() => handleTabClick('overview')}
               >
                 <LayoutDashboard size={18} />
                 {!sidebarCollapsed && <span>Dashboard Overview</span>}
               </button>
               <button
                 className={`nav-item ${activeTab === 'audio' ? 'active' : ''}`}
-                onClick={() => setActiveTab('audio')}
+                onClick={() => handleTabClick('audio')}
               >
                 <Music size={18} />
                 {!sidebarCollapsed && <span>Audio Broadcast</span>}
               </button>
               <button
-                className={`nav-item ${activeTab === 'devices' ? 'active' : ''}`}
-                onClick={() => setActiveTab('devices')}
+                className={`nav-item ${activeTab === 'fleet' ? 'active' : ''}`}
+                onClick={() => handleTabClick('fleet')}
               >
                 <Users size={18} />
                 {!sidebarCollapsed && <span>Device Fleet ({devicesCount})</span>}

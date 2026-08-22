@@ -402,6 +402,51 @@ io.on('connection', (socket) => {
     io.to(device.socketId).emit('camera-answer', { answer });
   });
 
+  // Participant reports its available cameras to the host
+  socket.on('device-cameras', ({ cameras }) => {
+    const { sessionId, deviceId, role } = socket.data;
+    const session = sessions.get(sessionId);
+    if (!session || role !== 'camera' || !Array.isArray(cameras)) return;
+
+    const device = session.devices.get(deviceId);
+    if (!device) return;
+
+    const hostSocketId = session.hostSocketId;
+    if (hostSocketId) {
+      io.to(hostSocketId).emit('device-cameras-update', {
+        deviceId,
+        cameras: cameras.slice(0, 8).map(c => ({
+          id: String(c.id || ''),
+          label: String(c.label || 'Camera').slice(0, 60)
+        }))
+      });
+    }
+  });
+
+  // Host requests a camera switch on a specific device
+  socket.on('switch-camera', ({ deviceId, cameraId }) => {
+    const { sessionId, role } = socket.data;
+    const session = sessions.get(sessionId);
+    if (!session || role !== 'host') return;
+
+    const device = session.devices.get(deviceId);
+    if (!device || device.role !== 'camera') return;
+
+    io.to(device.socketId).emit('switch-camera', { cameraId });
+  });
+
+  // Participant confirms the active camera changed
+  socket.on('camera-switched', ({ cameraId }) => {
+    const { sessionId, deviceId } = socket.data;
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    const hostSocketId = session.hostSocketId;
+    if (hostSocketId && typeof cameraId === 'string') {
+      io.to(hostSocketId).emit('camera-active-update', { deviceId, cameraId });
+    }
+  });
+
   socket.on('ice-candidate', ({ targetDeviceId, candidate }) => {
     const { sessionId } = socket.data;
     const session = sessions.get(sessionId);
