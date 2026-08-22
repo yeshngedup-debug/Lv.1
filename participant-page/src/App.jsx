@@ -138,6 +138,14 @@ function App() {
       setConnectionStatus('connected');
     });
 
+    // Heartbeat ping to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (newSocket.connected) {
+        newSocket.emit('ping');
+      }
+    }, 5000);
+    newSocket.on('disconnect', () => clearInterval(pingInterval));
+
     setSocket(newSocket);
     return newSocket;
   }, [SOCKET_URL]);

@@ -86,7 +86,8 @@ class Session {
       nickname,
       joinedAt: Date.now(),
       isLive: false,
-      volume: 1
+      volume: 1,
+      lastPing: Date.now()
     });
   }
 
@@ -223,6 +224,20 @@ io.on('connection', (socket) => {
       nickname: session.devices.get(deviceId).nickname,
       isRejoin
     });
+  });
+
+  socket.on('ping', () => {
+    const { sessionId, deviceId } = socket.data;
+    if (sessionId && deviceId) {
+      const session = sessions.get(sessionId);
+      if (session) {
+        const device = session.devices.get(deviceId);
+        if (device) {
+          device.lastPing = Date.now();
+        }
+      }
+    }
+    socket.emit('pong');
   });
 
   socket.on('disconnect', () => {
@@ -463,6 +478,22 @@ setInterval(() => {
     }
   }
 }, 60000);
+
+// Cleanup stale devices (no ping for 30 seconds)
+setInterval(() => {
+  const now = Date.now();
+  const STALE_THRESHOLD = 30000; // 30 seconds
+  
+  for (const [sessionId, session] of sessions.entries()) {
+    for (const [deviceId, device] of session.devices.entries()) {
+      if (now - (device.lastPing || device.joinedAt) > STALE_THRESHOLD) {
+        console.log(`Removing stale device ${deviceId} from session ${sessionId}`);
+        session.removeDevice(deviceId);
+        io.to(`session:${sessionId}`).emit('device-left', { deviceId });
+      }
+    }
+  }
+}, 10000);
 
 server.listen(PORT, () => {
   console.log(`Iris SYNCD server running on port ${PORT}`);
