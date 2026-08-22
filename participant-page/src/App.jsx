@@ -225,18 +225,78 @@ const requestMediaPermission = async (requestedRole) => {
         return true;
       } else if (requestedRole === 'camera') {
         console.log('Requesting camera/microphone permissions...');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
+        
+        // Try multiple constraint configurations for better device compatibility
+        const constraintsList = [
+          // Try high-res environment camera first (mobile rear)
+          {
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 }
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
           },
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
+          // Try user-facing camera (mobile front / desktop)
+          {
+            video: {
+              facingMode: { ideal: 'user' },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 }
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          },
+          // Fallback: any available camera
+          {
+            video: {
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            },
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
+          },
+          // Last resort: just audio + any video
+          {
+            video: true,
+            audio: {
+              echoCancellation: true,
+              noiseSuppression: true,
+              autoGainControl: true
+            }
           }
-        });
+        ];
+
+        let stream = null;
+        let lastError = null;
+
+        for (const constraints of constraintsList) {
+          try {
+            console.log('Trying media constraints:', JSON.stringify(constraints));
+            stream = await navigator.mediaDevices.getUserMedia(constraints);
+            console.log('Successfully got media stream with constraints:', constraints);
+            break;
+          } catch (err) {
+            console.warn('Media constraint failed, trying next:', err.name, err.message);
+            lastError = err;
+            continue;
+          }
+        }
+
+        if (!stream) {
+          throw lastError || new Error('No compatible media device found');
+        }
+
         console.log('Got user media stream:', stream.id, 'tracks:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState, muted: t.muted })));
         const videoTracks = stream.getVideoTracks();
         if (videoTracks.length === 0) {
@@ -262,9 +322,11 @@ const requestMediaPermission = async (requestedRole) => {
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setError('No camera/microphone found. Please connect a device and try again.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
-        setError('Camera/microphone is in use by another application. Please close other apps and try again.');
+        setError('Camera/microphone is in use by another application. Close it and try again.');
+      } else if (err.name === 'OverconstrainedError') {
+        setError('Camera constraints not supported. Trying alternative configuration...');
       } else {
-        setError(`Media error: ${err.message}. Please try again.`);
+        setError(`Media access error: ${err.message}`);
       }
       return false;
     }
