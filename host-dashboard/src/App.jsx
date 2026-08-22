@@ -2,6 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import io from 'socket.io-client';
 import { PeerConnectionManager } from './webrtc';
+import {
+  IconSpeaker, IconCamera, IconPlay, IconPause, IconResume,
+  IconCopy, IconExpand, IconClose, IconDevices, IconLink,
+  IconMic, IconMusic, IconLeave,
+} from './components/Icons';
+import { Equalizer } from './components/Equalizer';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -425,18 +431,29 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   if (!sessionId) {
     return (
       <div className="app">
+        <div className="aurora" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
         <header className="header">
-          <h1>Iris SYNCD</h1>
-          <p>Host Dashboard</p>
+          <div className="header-left">
+            <h1>Iris SYNCD</h1>
+            <span className="version-badge">Host</span>
+          </div>
         </header>
         <main className="main">
           <div className="create-session">
+            <div className="brand-mark" aria-hidden="true"><IconMusic /></div>
             <h2>Create a New Session</h2>
             <p>Start a party session and invite others to join</p>
             {error && <div className="error-message">{error}</div>}
             <button onClick={createSession} className="btn btn-primary" disabled={reconnecting}>
               {reconnecting ? 'Connecting...' : 'Create Session'}
             </button>
+            <ul className="feature-row" aria-label="Features">
+              <li className="feature-chip"><IconSpeaker /> Synced audio</li>
+              <li className="feature-chip"><IconCamera /> Live cameras</li>
+              <li className="feature-chip"><IconMic /> Push to talk</li>
+            </ul>
           </div>
         </main>
       </div>
@@ -460,7 +477,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       >
         <div className="device-card-header">
           <div className="device-avatar">
-            {isCamera ? '📷' : '🔊'}
+            {isCamera ? <IconCamera /> : <IconSpeaker />}
           </div>
           <div className="device-meta">
             <h3 className="device-name">{device.nickname}</h3>
@@ -530,7 +547,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 className="btn btn-secondary btn-sm"
                 disabled={!isCamera}
               >
-                🔍 Fullscreen
+                <IconExpand />
+                Fullscreen
               </button>
               <button
                 onClick={(e) => {
@@ -558,7 +576,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           <header className="fullscreen-header">
             <h2>{fullscreenDevice.nickname}</h2>
             <button onClick={closeFullscreen} className="close-btn" aria-label="Close fullscreen">
-              ✕
+              <IconClose />
             </button>
           </header>
           <div className="fullscreen-video-wrapper">
@@ -585,7 +603,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                   <span className="volume-value">{Math.round((deviceVolumes[fullscreenDevice.id] ?? 1) * 100)}%</span>
                 </div>
                 <span className="connection-badge">
-                  {pc?.connectionState === 'connected' ? '🟢 Connected' : '🔴 Disconnected'}
+                  {pc?.connectionState === 'connected' ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
             </div>
@@ -611,6 +629,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
             {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
           </div>
           <button onClick={endSession} className="btn btn-danger btn-small" disabled={reconnecting}>
+            <IconLeave />
             End Session
           </button>
         </div>
@@ -648,7 +667,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 onClick={() => navigator.clipboard.writeText(joinUrl)}
                 className="btn btn-secondary"
               >
-                📋 Copy Link
+                <IconCopy />
+                Copy Link
               </button>
             </div>
           </section>
@@ -660,7 +680,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
             </div>
             {devices.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon">📱</div>
+                <div className="empty-icon"><IconDevices /></div>
                 <p>No devices connected yet</p>
                 <p className="empty-hint">Share the QR code or link above to invite participants</p>
               </div>
@@ -692,7 +712,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                   style={{ display: 'none' }}
                 />
                 <span className="btn btn-secondary">
-                  {audioFile ? audioFile.name : '📁 Choose Audio File'}
+                  <IconMusic />
+                  {audioFile ? audioFile.name : 'Choose Audio File'}
                 </span>
               </label>
               {audioFile && (
@@ -712,11 +733,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                   onError={() => setError('Error loading audio file')}
                 />
 
-                <div className="waveform-preview" role="img" aria-label="Audio waveform">
-                  {[...Array(32)].map((_, i) => (
-                    <span key={i} style={{ animationDelay: `${i * 0.05}s` }}></span>
-                  ))}
-                </div>
+                <Equalizer active={isPlaying} bars={36} />
 
                 <div className="progress-bar">
                   <input
@@ -737,15 +754,18 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 <div className="playback-buttons">
                   {isPlaying ? (
                     <button onClick={pausePlayback} className="btn btn-primary" disabled={reconnecting}>
-                      ⏸️ Pause
+                      <IconPause />
+                      Pause
                     </button>
                   ) : (
                     <button onClick={startPlayback} className="btn btn-primary" disabled={reconnecting || !audioUrl}>
-                      ▶️ Play
+                      <IconPlay />
+                      Play
                     </button>
                   )}
                   <button onClick={resumePlayback} className="btn btn-secondary" disabled={reconnecting || isPlaying}>
-                    ↻ Resume
+                    <IconResume />
+                    Resume
                   </button>
                 </div>
               </div>
@@ -762,7 +782,11 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 className={`btn btn-talk ${isTalking ? 'active' : ''}`}
                 disabled={reconnecting}
               >
-                {isTalking ? '🎤 Broadcasting...' : '🎤 Hold to Talk'}
+                {isTalking ? (
+                  <><IconMic /> Broadcasting...</>
+                ) : (
+                  <><IconMic /> Hold to Talk</>
+                )}
               </button>
             </div>
           </section>

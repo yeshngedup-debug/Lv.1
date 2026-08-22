@@ -29,7 +29,11 @@ const io = new Server(server, {
     origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
     methods: ['GET', 'POST'],
     credentials: useCredentials
-  }
+  },
+  pingInterval: 10000, // 10s ping check
+  pingTimeout: 5000,    // 5s timeout -> detect dropped connection fast
+  transports: ['websocket', 'polling'],
+  maxHttpBufferSize: 1e7 // 10MB
 });
 
 app.use(cors({
@@ -156,39 +160,54 @@ io.on('connection', (socket) => {
     console.log(`Host reconnected to session: ${sessionId}`);
   });
 
-  socket.on('join-session', ({ sessionId, role, nickname }, callback) => {
+  socket.on('join-session', ({ sessionId, role, nickname, deviceId: existingDeviceId }, callback) => {
     const session = sessions.get(sessionId);
 
     if (!session) {
-      return callback({ error: 'Session not found' });
+      return callback?.({ error: 'Session not found' });
     }
 
     if (session.isExpired()) {
       sessions.delete(sessionId);
-      return callback({ error: 'Session has expired' });
+      return callback?.({ error: 'Session has expired' });
     }
 
     // Validate role
     const validRoles = ['speaker', 'camera'];
     if (!validRoles.includes(role)) {
-      return callback({ error: 'Invalid role. Must be "speaker" or "camera"' });
+      return callback?.({ error: 'Invalid role. Must be "speaker" or "camera"' });
     }
 
-    // Sanitize nickname (max 50 chars, alphanumeric + spaces + basic punctuation)
+    // Sanitize nickname
     const sanitizedNickname = (nickname || `Device ${session.devices.size + 1}`)
       .slice(0, 50)
       .replace(/[<>\"']/g, '');
 
-    const deviceId = uuidv4();
-    session.addDevice(deviceId, socket.id, role, sanitizedNickname);
+    let deviceId = existingDeviceId;
+    let isRejoin = false;
+
+    if (deviceId && session.devices.has(deviceId)) {
+      // Re-attaching existing device session
+      const existingDevice = session.devices.get(deviceId);
+      existingDevice.socketId = socket.id;
+      existingDevice.nickname = sanitizedNickname || existingDevice.nickname;
+      existingDevice.role = role;
+      isRejoin = true;
+      console.log(`Device ${deviceId} reconnected to session ${sessionId}`);
+    } else {
+      deviceId = uuidv4();
+      session.addDevice(deviceId, socket.id, role, sanitizedNickname);
+      console.log(`Device ${deviceId} joined session ${sessionId} as ${role}`);
+    }
 
     socket.join(`session:${sessionId}`);
     socket.data.sessionId = sessionId;
     socket.data.deviceId = deviceId;
     socket.data.role = role;
 
-    callback({
+    callback?.({
       deviceId,
+      isRejoin,
       session: {
         id: sessionId,
         isPlaying: session.isPlaying,
@@ -198,13 +217,13 @@ io.on('connection', (socket) => {
       }
     });
 
+    // Notify host & session devices
     io.to(`session:${sessionId}`).emit('device-joined', {
       deviceId,
       role,
-      nickname: session.devices.get(deviceId).nickname
+      nickname: session.devices.get(deviceId).nickname,
+      isRejoin
     });
-
-    console.log(`Device ${deviceId} joined session ${sessionId} as ${role}`);
   });
 
   socket.on('disconnect', () => {
@@ -221,9 +240,15 @@ io.on('connection', (socket) => {
       io.to(`session:${sessionId}`).emit('host-disconnected');
       console.log(`Host disconnected from session ${sessionId}, session preserved for reconnection`);
     } else if (deviceId) {
-      session.removeDevice(deviceId);
-      io.to(`session:${sessionId}`).emit('device-left', { deviceId });
-      console.log(`Device ${deviceId} left session ${sessionId}`);
+      // Give 15s grace period for mobile reconnection before removing device
+      setTimeout(() => {
+        const currentDev = session.devices.get(deviceId);
+        if (currentDev && currentDev.socketId === socket.id) {
+          session.removeDevice(deviceId);
+          io.to(`session:${sessionId}`).emit('device-left', { deviceId });
+          console.log(`Device ${deviceId} left session ${sessionId} after grace period`);
+        }
+      }, 15000);
     }
   });
 

@@ -3,6 +3,10 @@ import io from 'socket.io-client';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
 import { PeerConnectionManager } from './webrtc';
+import {
+  IconSpeaker, IconCamera, IconMusic, IconCheck,
+  IconStopShare, IconLeave, IconBack,
+} from './components/Icons';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -88,11 +92,17 @@ function App() {
 
       // Rejoin session if we had one
       if (sessionId && isJoined && role) {
-        newSocket.emit('join-session', { sessionId, role, nickname }, (response) => {
+        newSocket.emit('join-session', { sessionId, role, nickname, deviceId: deviceIdRef.current }, (response) => {
           if (response.error) {
             console.error('Rejoin failed:', response.error);
             setIsJoined(false);
             setRole(null);
+          } else if (response.deviceId) {
+            deviceIdRef.current = response.deviceId;
+            if (role === 'camera' && streamRef.current) {
+              stopCameraStreaming();
+              startCameraStreaming();
+            }
           }
         });
       }
@@ -277,6 +287,8 @@ const requestMediaPermission = async (requestedRole) => {
     });
   };
 
+  const answerHandlerRef = useRef(null);
+
   const startCameraStreaming = async () => {
     if (!streamRef.current || !socket) return;
 
@@ -286,25 +298,33 @@ const requestMediaPermission = async (requestedRole) => {
       return;
     }
 
+    if (peerConnectionRef.current) {
+      peerConnectionRef.current.close();
+      peerConnectionRef.current = null;
+    }
+
+    if (answerHandlerRef.current) {
+      socket.off('camera-answer', answerHandlerRef.current);
+      answerHandlerRef.current = null;
+    }
+
     try {
       const pc = new PeerConnectionManager(socket, 'host', true);
 
       await pc.addLocalStream(streamRef.current);
 
-      // Debug: log what tracks we're sending
       const sentTracks = streamRef.current.getTracks();
       console.log('Sending tracks:', sentTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
 
       pc.onConnectionStateChange = (state) => {
         console.log('Camera connection state:', state);
-        if (state === 'failed' || state === 'disconnected') {
-          setError('Camera connection lost. Attempting to reconnect...');
+        if (state === 'failed') {
+          console.warn('Camera WebRTC connection failed, attempting restart...');
           setTimeout(() => {
             if (isJoined && role === 'camera') {
-              stopCameraStreaming();
               startCameraStreaming();
             }
-          }, 5000);
+          }, 3000);
         }
       };
 
@@ -323,13 +343,13 @@ const requestMediaPermission = async (requestedRole) => {
           console.error('Failed to set remote description:', err);
         }
       };
+
+      answerHandlerRef.current = handleAnswer;
       socket.on('camera-answer', handleAnswer);
 
       peerConnectionRef.current = pc;
-
       setIsLive(true);
 
-      // Request wake lock to keep screen on
       try {
         wakeLockRef.current = await requestWakeLock();
       } catch (err) {
@@ -343,6 +363,11 @@ const requestMediaPermission = async (requestedRole) => {
   };
 
   const stopCameraStreaming = () => {
+    if (answerHandlerRef.current && socket) {
+      socket.off('camera-answer', answerHandlerRef.current);
+      answerHandlerRef.current = null;
+    }
+
     if (peerConnectionRef.current) {
       peerConnectionRef.current.close();
       peerConnectionRef.current = null;
@@ -381,6 +406,7 @@ const requestMediaPermission = async (requestedRole) => {
           <h2>Error</h2>
           <p>{error}</p>
           <button onClick={() => window.location.href = '/'} className="btn btn-primary">
+            <IconBack />
             Go Back
           </button>
         </div>
@@ -392,6 +418,7 @@ const requestMediaPermission = async (requestedRole) => {
     return (
       <div className="app">
         <div className="join-container">
+          <div className="brand-mark" aria-hidden="true"><IconMusic /></div>
           <h1>Iris SYNCD</h1>
           <p>Enter session code to join</p>
           <input
@@ -418,14 +445,14 @@ const requestMediaPermission = async (requestedRole) => {
       <div className="app">
         <div className="role-selection">
           <h1>Join Session</h1>
-          <p>Session: {sessionId}</p>
+          <span className="session-chip">Session: {sessionId}</span>
 
           <div className="role-options">
             <button
               onClick={() => setRole('speaker')}
               className="role-option"
             >
-              <span className="role-icon">🔊</span>
+              <span className="role-icon"><IconSpeaker /></span>
               <span className="role-title">Join as Speaker</span>
               <span className="role-description">
                 Play audio from the host on this device
