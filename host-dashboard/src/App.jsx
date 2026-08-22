@@ -171,6 +171,11 @@ function App() {
       }));
     });
 
+    socket.on('quality-changed', ({ quality, deviceId }) => {
+      console.log('Quality changed for device', deviceId, ':', quality);
+      setCurrentQuality(quality);
+    });
+
 socket.on('camera-offer', async ({ deviceId, offer }) => {
       console.log('Received camera offer from', deviceId, 'Offer type:', offer?.type);
       console.log('Offer SDP preview:', offer?.sdp?.substring(0, 200));
@@ -450,6 +455,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [fullscreenDevice, setFullscreenDevice] = useState(null);
   const [deviceVolumes, setDeviceVolumes] = useState({});
   const [activePage, setActivePage] = useState('overview');
+  const [currentQuality, setCurrentQuality] = useState('high');
   const multiCamVideoRefs = useRef({});
 
   useEffect(() => {
@@ -726,6 +732,25 @@ const cameras = camEntry.cameras || [];
                   {listening ? <Volume2 size={15} /> : <MicOff size={15} />}
                   <span>{listening ? 'Listening' : 'Listen'}</span>
                 </button>
+
+                <div className="control-group">
+                  <label>Quality</label>
+                  <select
+                    value={currentQuality}
+                    onChange={(e) => {
+                      const quality = e.target.value;
+                      setCurrentQuality(quality);
+                      if (socket) {
+                        socket.emit('request-quality', { quality });
+                      }
+                    }}
+                    className="quality-select"
+                  >
+                    <option value="low">Low (640x360 @10fps)</option>
+                    <option value="medium">Medium (1280x720 @20fps)</option>
+                    <option value="high">High (1920x1080 @30fps)</option>
+                  </select>
+                </div>
 
                 <div className="control-group">
                   <label>Vol</label>

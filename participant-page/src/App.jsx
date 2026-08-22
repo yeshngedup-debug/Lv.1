@@ -31,6 +31,7 @@ function App() {
   const [availableCameras, setAvailableCameras] = useState([]);
   const [activeCameraId, setActiveCameraId] = useState(null);
   const [allCameraStreams, setAllCameraStreams] = useState({});
+  const [currentQuality, setCurrentQuality] = useState('high');
   const deviceIdRef = useRef(null);
 
   const videoRef = useRef(null);
@@ -206,6 +207,11 @@ function App() {
     socket.on('switch-camera', async ({ cameraId }) => {
       console.log('Host requested switch to camera:', cameraId);
       await switchToCamera(cameraId);
+    });
+
+    socket.on('request-quality', async ({ quality }) => {
+      console.log('Host requested quality change:', quality);
+      await changeCameraQuality(quality);
     });
 
     return () => {
@@ -601,6 +607,52 @@ const requestMediaPermission = async (requestedRole) => {
     console.log('Switching active camera to:', cameraId);
     setActiveCameraId(cameraId);
     socket.emit('camera-switched', { cameraId });
+  };
+
+  const changeCameraQuality = async (quality) => {
+    if (!socket || !deviceIdRef.current || quality === currentQuality) return;
+    
+    const constraints = {
+      low: { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 10, max: 15 } },
+      medium: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 20, max: 30 } },
+      high: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+    };
+    
+    const constraint = constraints[quality] || constraints.medium;
+    
+    try {
+      console.log('Changing camera quality to:', quality, constraint);
+      
+      // Apply constraints to all active video tracks
+      for (const [deviceId, stream] of Object.entries(allCameraStreams)) {
+        const tracks = stream.getVideoTracks();
+        for (const track of tracks) {
+          try {
+            await track.applyConstraints(constraint);
+            console.log(`Applied ${quality} quality to camera ${deviceId}`);
+          } catch (err) {
+            console.warn(`Failed to apply quality to ${deviceId}:`, err);
+          }
+        }
+      }
+      
+      // Also apply to combined stream if it has video tracks
+      if (streamRef.current) {
+        const combinedTracks = streamRef.current.getVideoTracks();
+        for (const track of combinedTracks) {
+          try {
+            await track.applyConstraints(constraint);
+          } catch (err) {
+            console.warn('Failed to apply quality to combined stream:', err);
+          }
+        }
+      }
+      
+      setCurrentQuality(quality);
+      socket.emit('quality-changed', { quality });
+    } catch (err) {
+      console.error('Failed to change camera quality:', err);
+    }
   };
 
   useEffect(() => {
