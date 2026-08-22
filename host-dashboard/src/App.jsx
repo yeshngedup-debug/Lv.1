@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import io from 'socket.io-client';
-import { PeerConnectionManager } from './webrtc';
 import {
-  IconSpeaker, IconCamera, IconPlay, IconPause, IconResume,
-  IconCopy, IconExpand, IconClose, IconDevices, IconLink,
-  IconMic, IconMusic, IconLeave,
-} from './components/Icons';
+  Radio, Video, Speaker, Music, Mic, Copy, Check, Power,
+  Maximize2, Trash2, Upload, Play, Pause, RotateCcw, Monitor, Sparkles
+} from 'lucide-react';
+import { PeerConnectionManager } from './webrtc';
+import { GridlineShell } from './components/GridlineShell';
 import { Equalizer } from './components/Equalizer';
 import './App.css';
 
@@ -430,33 +430,24 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
   if (!sessionId) {
     return (
-      <div className="app">
-        <div className="aurora" aria-hidden="true">
-          <span></span><span></span><span></span>
+      <GridlineShell
+        sessionId={null}
+        connectionStatus={connectionStatus}
+        reconnecting={reconnecting}
+      >
+        <div className="create-session-container">
+          <div className="landing-icon-wrapper">
+            <Radio size={32} />
+          </div>
+          <h2>Create a New Session</h2>
+          <p>Initialize a high-performance audio & camera sync hub for connected devices</p>
+          {error && <div className="error-message">{error}</div>}
+          <button onClick={createSession} className="gridline-btn-primary" disabled={reconnecting} style={{ padding: '0.85rem 2.2rem', fontSize: '1.05rem', borderRadius: '12px' }}>
+            <Sparkles size={18} />
+            <span>{reconnecting ? 'Connecting...' : 'Launch Gridline Hub'}</span>
+          </button>
         </div>
-        <header className="header">
-          <div className="header-left">
-            <h1>Iris SYNCD</h1>
-            <span className="version-badge">Host</span>
-          </div>
-        </header>
-        <main className="main">
-          <div className="create-session">
-            <div className="brand-mark" aria-hidden="true"><IconMusic /></div>
-            <h2>Create a New Session</h2>
-            <p>Start a party session and invite others to join</p>
-            {error && <div className="error-message">{error}</div>}
-            <button onClick={createSession} className="btn btn-primary" disabled={reconnecting}>
-              {reconnecting ? 'Connecting...' : 'Create Session'}
-            </button>
-            <ul className="feature-row" aria-label="Features">
-              <li className="feature-chip"><IconSpeaker /> Synced audio</li>
-              <li className="feature-chip"><IconCamera /> Live cameras</li>
-              <li className="feature-chip"><IconMic /> Push to talk</li>
-            </ul>
-          </div>
-        </main>
-      </div>
+      </GridlineShell>
     );
   }
 
@@ -614,78 +605,90 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   };
 
   return (
-    <div className="app">
-      <header className="header">
-        <div className="header-left">
-          <h1>Iris SYNCD</h1>
-          <span className="version-badge">v1.0</span>
-        </div>
-        <div className="header-center">
-          <span className="session-code">Session: {sessionId}</span>
-        </div>
-        <div className="header-right">
-          <div className={`connection-status ${connectionStatus}`}>
-            <span className="status-dot"></span>
-            {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
-          </div>
-          <button onClick={endSession} className="btn btn-danger btn-small" disabled={reconnecting}>
-            <IconLeave />
-            End Session
-          </button>
-        </div>
-      </header>
-
+    <GridlineShell
+      sessionId={sessionId}
+      connectionStatus={connectionStatus}
+      reconnecting={reconnecting}
+      devicesCount={devices.length}
+      camerasCount={cameraDevices.length}
+      speakersCount={speakerDevices.length}
+      onEndSession={endSession}
+      joinUrl={joinUrl}
+    >
       {error && <div className="error-banner" onClick={() => setError(null)}>{error} (click to dismiss)</div>}
       {renderFullscreenModal()}
 
-      <main className="main">
-        <div className="dashboard">
-          <section className="join-section">
-            <div className="join-header">
-              <h2>Invite Participants</h2>
-              <div className="join-stats">
-                <span className="stat">
-                  <span className="stat-value">{devices.length}</span>
-                  <span className="stat-label">Connected</span>
-                </span>
-                <span className="stat">
-                  <span className="stat-value">{cameraDevices.length}</span>
-                  <span className="stat-label">Cameras</span>
-                </span>
-                <span className="stat">
-                  <span className="stat-value">{speakerDevices.length}</span>
-                  <span className="stat-label">Speakers</span>
-                </span>
+      <div className="gridline-dashboard-grid">
+        {/* Metric Overview Row */}
+        <div className="col-span-12">
+          <div className="metrics-row">
+            <div className="metric-box">
+              <span className="metric-label">FLEET DEVICES</span>
+              <span className="metric-value">{devices.length}</span>
+            </div>
+            <div className="metric-box">
+              <span className="metric-label">LIVE CAMERAS</span>
+              <span className="metric-value" style={{ color: 'var(--accent-magenta)' }}>{cameraDevices.length}</span>
+            </div>
+            <div className="metric-box">
+              <span className="metric-label">ACTIVE SPEAKERS</span>
+              <span className="metric-value" style={{ color: 'var(--accent-cyan)' }}>{speakerDevices.length}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Invite & QR Panel */}
+        <div className="col-span-4">
+          <div className="gridline-card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <Radio size={18} className="card-title-icon" />
+                <h3 className="card-title">Invite Participants</h3>
+              </div>
+              <span className="card-badge">QR ACCESS</span>
+            </div>
+
+            <div className="qr-flex-wrapper">
+              <div className="qr-box">
+                <QRCodeSVG value={joinUrl} size={150} />
+              </div>
+              <div className="invite-info-col">
+                <div className="url-input-group">
+                  <input type="text" value={joinUrl} readOnly />
+                  <button
+                    onClick={() => navigator.clipboard.writeText(joinUrl)}
+                    className="gridline-btn-ghost btn-sm"
+                  >
+                    <Copy size={14} />
+                  </button>
+                </div>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                  Scan QR code or copy session URL to connect speakers & cameras.
+                </p>
               </div>
             </div>
-            <div className="qr-container">
-              <QRCodeSVG value={joinUrl} size={200} />
-            </div>
-            <div className="join-url">
-              <input type="text" value={joinUrl} readOnly />
-              <button
-                onClick={() => navigator.clipboard.writeText(joinUrl)}
-                className="btn btn-secondary"
-              >
-                <IconCopy />
-                Copy Link
-              </button>
-            </div>
-          </section>
+          </div>
+        </div>
 
-          <section className="devices-section">
-            <div className="section-header">
-              <h2>Connected Devices</h2>
-              <p className="section-hint">Click a device to control camera/audio</p>
+        {/* Device Fleet Section */}
+        <div className="col-span-8">
+          <div className="gridline-card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <Monitor size={18} className="card-title-icon" />
+                <h3 className="card-title">Connected Device Fleet</h3>
+              </div>
+              <span className="card-badge">{devices.length} ONLINE</span>
             </div>
+
             {devices.length === 0 ? (
               <div className="empty-state">
-                <div className="empty-icon"><IconDevices /></div>
+                <div className="empty-icon"><Monitor size={28} /></div>
                 <p>No devices connected yet</p>
-                <p className="empty-hint">Share the QR code or link above to invite participants</p>
+                <p className="empty-hint">Share the QR code or link to invite participants</p>
               </div>
             ) : (
-              <div className="device-grid">
+              <div className="device-fleet-grid">
                 {devices.map(device => (
                   <DeviceCard
                     key={device.id}
@@ -698,10 +701,19 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 ))}
               </div>
             )}
-          </section>
+          </div>
+        </div>
 
-          <section className="audio-section">
-            <h2>Audio Broadcast</h2>
+        {/* Audio Broadcast Section */}
+        <div className="col-span-12">
+          <div className="gridline-card">
+            <div className="card-header">
+              <div className="card-title-group">
+                <Music size={18} className="card-title-icon" />
+                <h3 className="card-title">Audio Broadcast & Push-to-Talk</h3>
+              </div>
+              <span className="card-badge">LIVE AUDIO CONTROL</span>
+            </div>
 
             <div className="audio-upload">
               <label className="file-upload">
@@ -711,8 +723,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                   onChange={handleFileChange}
                   style={{ display: 'none' }}
                 />
-                <span className="btn btn-secondary">
-                  <IconMusic />
+                <span className="gridline-btn-ghost">
+                  <Upload size={14} />
                   {audioFile ? audioFile.name : 'Choose Audio File'}
                 </span>
               </label>
@@ -753,26 +765,26 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
                 <div className="playback-buttons">
                   {isPlaying ? (
-                    <button onClick={pausePlayback} className="btn btn-primary" disabled={reconnecting}>
-                      <IconPause />
-                      Pause
+                    <button onClick={pausePlayback} className="gridline-btn-primary" disabled={reconnecting}>
+                      <Pause size={14} />
+                      <span>Pause</span>
                     </button>
                   ) : (
-                    <button onClick={startPlayback} className="btn btn-primary" disabled={reconnecting || !audioUrl}>
-                      <IconPlay />
-                      Play
+                    <button onClick={startPlayback} className="gridline-btn-primary" disabled={reconnecting || !audioUrl}>
+                      <Play size={14} />
+                      <span>Play Track</span>
                     </button>
                   )}
-                  <button onClick={resumePlayback} className="btn btn-secondary" disabled={reconnecting || isPlaying}>
-                    <IconResume />
-                    Resume
+                  <button onClick={resumePlayback} className="gridline-btn-ghost" disabled={reconnecting || isPlaying}>
+                    <RotateCcw size={14} />
+                    <span>Resume</span>
                   </button>
                 </div>
               </div>
             )}
 
-            <div className="push-to-talk">
-              <h3>Push to Talk</h3>
+            <div className="push-to-talk" style={{ marginTop: '1rem' }}>
+              <h4 style={{ fontSize: '0.82rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Host Push-to-Talk Broadcast</h4>
               <button
                 onMouseDown={startPushToTalk}
                 onMouseUp={stopPushToTalk}
@@ -782,44 +794,47 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 className={`btn btn-talk ${isTalking ? 'active' : ''}`}
                 disabled={reconnecting}
               >
-                {isTalking ? (
-                  <><IconMic /> Broadcasting...</>
-                ) : (
-                  <><IconMic /> Hold to Talk</>
-                )}
+                <Mic size={16} />
+                <span>{isTalking ? 'Broadcasting Voice...' : 'Hold to Talk to Fleet'}</span>
               </button>
             </div>
-          </section>
+          </div>
+        </div>
 
-          {cameraDevices.length > 0 && (
-            <section className="camera-section">
-              <div className="section-header">
-                <h2>Live Camera Feeds</h2>
-                <p className="section-hint">Click any feed for fullscreen view</p>
+        {/* Live Camera Grid Section */}
+        {cameraDevices.length > 0 && (
+          <div className="col-span-12">
+            <div className="gridline-card">
+              <div className="card-header">
+                <div className="card-title-group">
+                  <Video size={18} className="card-title-icon" style={{ color: 'var(--accent-magenta)' }} />
+                  <h3 className="card-title">Live Camera Grid</h3>
+                </div>
+                <span className="card-badge">{cameraDevices.length} CAMERAS LIVE</span>
               </div>
-              <div className="camera-grid">
+              <div className="camera-feeds-grid">
                 {cameraDevices.map(device => (
-                  <div key={device.id} className="camera-feed">
+                  <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
                     <video
                       ref={(el) => registerVideoElement(device.id, el, 'grid')}
                       autoPlay
                       playsInline
                       muted
-                      className="camera-video"
+                      className="camera-feed-video"
                       onError={() => console.error(`Video error for ${device.nickname}`)}
                     />
-                    <div className="camera-overlay">
-                      <span className="camera-name">{device.nickname}</span>
-                      <span className="live-badge">LIVE</span>
+                    <div className="camera-feed-bar">
+                      <span style={{ fontWeight: 600 }}>{device.nickname}</span>
+                      <span className="live-indicator-pill">LIVE</span>
                     </div>
                   </div>
                 ))}
               </div>
-            </section>
-          )}
-        </div>
-      </main>
-    </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </GridlineShell>
   );
 }
 

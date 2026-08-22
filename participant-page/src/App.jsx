@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
+import {
+  Radio, Speaker, Video, ArrowRight, ArrowLeft, Shield, Check, Music, Power
+} from 'lucide-react';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
 import { PeerConnectionManager } from './webrtc';
-import {
-  IconSpeaker, IconCamera, IconMusic, IconCheck,
-  IconStopShare, IconLeave, IconBack,
-} from './components/Icons';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
@@ -417,23 +416,36 @@ const requestMediaPermission = async (requestedRole) => {
   if (!sessionId) {
     return (
       <div className="app">
+        <div className="gridline-status-strip">
+          <div className="status-strip-left">
+            <span className="status-pill">
+              <span className="status-dot-pulse"></span>
+              GRIDLINE CONNECT
+            </span>
+          </div>
+        </div>
+
         <div className="join-container">
-          <div className="brand-mark" aria-hidden="true"><IconMusic /></div>
+          <div className="brand-icon-box">
+            <Radio size={32} />
+          </div>
           <h1>Iris SYNCD</h1>
-          <p>Enter session code to join</p>
+          <p>Enter 8-character session code to join</p>
           <input
             type="text"
-            placeholder="Session Code"
+            placeholder="SESSION CODE"
             value={sessionId || ''}
             onChange={(e) => setSessionId(e.target.value.toUpperCase())}
             maxLength={8}
           />
           <button
             onClick={() => setSessionId(sessionId)}
-            className="btn btn-primary"
+            className="gridline-btn-primary"
             disabled={!sessionId || sessionId.length !== 8}
+            style={{ width: '100%', maxWidth: '280px', marginTop: '0.5rem' }}
           >
-            Continue
+            <span>Continue</span>
+            <ArrowRight size={16} />
           </button>
         </div>
       </div>
@@ -443,19 +455,28 @@ const requestMediaPermission = async (requestedRole) => {
   if (!role) {
     return (
       <div className="app">
+        <div className="gridline-status-strip">
+          <div className="status-strip-left">
+            <span className="status-pill">
+              <span className="status-dot-pulse"></span>
+              ROLE SELECTION
+            </span>
+          </div>
+        </div>
+
         <div className="role-selection">
-          <h1>Join Session</h1>
-          <span className="session-chip">Session: {sessionId}</span>
+          <h1>Select Device Role</h1>
+          <span className="session-chip">SESSION: {sessionId}</span>
 
           <div className="role-options">
             <button
               onClick={() => setRole('speaker')}
               className="role-option"
             >
-              <span className="role-icon"><IconSpeaker /></span>
+              <span className="role-icon"><Speaker size={26} /></span>
               <span className="role-title">Join as Speaker</span>
               <span className="role-description">
-                Play audio from the host on this device
+                Synchronize and play audio from the host in real-time
               </span>
             </button>
 
@@ -463,10 +484,10 @@ const requestMediaPermission = async (requestedRole) => {
               onClick={() => setRole('camera')}
               className="role-option"
             >
-              <span className="role-icon">📹</span>
+              <span className="role-icon" style={{ color: 'var(--accent-magenta)', background: 'rgba(217, 70, 239, 0.12)', borderColor: 'rgba(217, 70, 239, 0.3)' }}><Video size={26} /></span>
               <span className="role-title">Join as Camera</span>
               <span className="role-description">
-                Stream video to the host dashboard
+                Stream live high-definition video directly to the host dashboard
               </span>
             </button>
           </div>
