@@ -16,6 +16,11 @@ function App() {
   const [role, setRole] = useState(null);
   const [nickname, setNickname] = useState('');
   const [isJoined, setIsJoined] = useState(false);
+
+  const stateRef = useRef({ sessionId, role, nickname, isJoined });
+  useEffect(() => {
+    stateRef.current = { sessionId, role, nickname, isJoined };
+  }, [sessionId, role, nickname, isJoined]);
   const [isLive, setIsLive] = useState(false);
   const [error, setError] = useState(null);
   const [mediaPermission, setMediaPermission] = useState(null);
@@ -90,15 +95,16 @@ function App() {
       setError(null);
 
       // Rejoin session if we had one
-      if (sessionId && isJoined && role) {
-        newSocket.emit('join-session', { sessionId, role, nickname, deviceId: deviceIdRef.current }, (response) => {
+      const { sessionId: sId, role: r, nickname: nick, isJoined: joined } = stateRef.current;
+      if (sId && joined && r) {
+        newSocket.emit('join-session', { sessionId: sId, role: r, nickname: nick, deviceId: deviceIdRef.current }, (response) => {
           if (response.error) {
             console.error('Rejoin failed:', response.error);
             setIsJoined(false);
             setRole(null);
           } else if (response.deviceId) {
             deviceIdRef.current = response.deviceId;
-            if (role === 'camera' && streamRef.current) {
+            if (r === 'camera' && streamRef.current) {
               stopCameraStreaming();
               startCameraStreaming();
             }
@@ -134,7 +140,7 @@ function App() {
 
     setSocket(newSocket);
     return newSocket;
-  }, [SOCKET_URL, sessionId, isJoined, role, nickname]);
+  }, [SOCKET_URL]);
 
   useEffect(() => {
     const newSocket = connectSocket();

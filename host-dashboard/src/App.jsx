@@ -17,6 +17,10 @@ const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4'
 function App() {
   const [socket, setSocket] = useState(null);
   const [sessionId, setSessionId] = useState(null);
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
   const [joinUrl, setJoinUrl] = useState('');
   const [devices, setDevices] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -58,8 +62,9 @@ function App() {
       setError(null);
       
       // Rejoin session if we had one
-      if (sessionId) {
-        newSocket.emit('rejoin-session', { sessionId }, (response) => {
+      const currentSessionId = sessionIdRef.current;
+      if (currentSessionId) {
+        newSocket.emit('rejoin-session', { sessionId: currentSessionId }, (response) => {
           if (response.error) {
             console.error('Rejoin failed:', response.error);
             setSessionId(null);
@@ -102,7 +107,7 @@ function App() {
 
     setSocket(newSocket);
     return newSocket;
-  }, [SOCKET_URL, sessionId]);
+  }, [SOCKET_URL]);
 
   useEffect(() => {
     const newSocket = connectSocket();

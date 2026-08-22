@@ -26,19 +26,18 @@ const useCredentials = ALLOWED_ORIGINS.length > 0;
 
 const io = new Server(server, {
   cors: {
-    origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
-    methods: ['GET', 'POST'],
-    credentials: useCredentials
+    origin: '*',
+    methods: ['GET', 'POST']
   },
-  pingInterval: 10000, // 10s ping check
-  pingTimeout: 5000,    // 5s timeout -> detect dropped connection fast
+  pingInterval: 10000,
+  pingTimeout: 10000,
   transports: ['websocket', 'polling'],
-  maxHttpBufferSize: 1e7 // 10MB
+  maxHttpBufferSize: 1e7
 });
 
 app.use(cors({
-  origin: ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : true,
-  credentials: useCredentials
+  origin: '*',
+  methods: ['GET', 'POST']
 }));
 app.use(express.json());
 
