@@ -453,6 +453,10 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', sessions: sessions.size });
 });
 
+app.get('/join', (req, res) => {
+  res.sendFile(join(participantPagePath, 'index.html'));
+});
+
 app.get('/join/:sessionId', (req, res) => {
   res.sendFile(join(participantPagePath, 'index.html'));
 });

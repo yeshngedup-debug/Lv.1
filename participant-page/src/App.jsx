@@ -184,12 +184,12 @@ function App() {
 
     socket.on('session-ended', () => {
       alert('Session has ended by the host');
-      window.location.href = '/';
+      window.location.href = '/join';
     });
 
     socket.on('removed-from-session', () => {
       alert('You have been removed from the session');
-      window.location.href = '/';
+      window.location.href = '/join';
     });
 
     socket.on('host-mic-active', () => {
@@ -471,7 +471,7 @@ const requestMediaPermission = async (requestedRole) => {
       audioSyncRef.current.destroy();
     }
     socket.disconnect();
-    window.location.href = '/';
+    window.location.href = '/join';
   };
 
   if (error) {
@@ -480,7 +480,7 @@ const requestMediaPermission = async (requestedRole) => {
         <div className="error-container">
           <h2>Error</h2>
           <p>{error}</p>
-          <button onClick={() => window.location.href = '/'} className="btn btn-primary">
+          <button onClick={() => window.location.href = '/join'} className="btn btn-primary">
             <ArrowLeft size={16} />
             Go Back
           </button>
