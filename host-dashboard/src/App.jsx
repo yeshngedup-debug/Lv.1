@@ -473,7 +473,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       >
         <div className="device-card-header">
           <div className="device-avatar">
-            {isCamera ? <IconCamera /> : <IconSpeaker />}
+            {isCamera ? <Video size={18} /> : <Speaker size={18} />}
           </div>
           <div className="device-meta">
             <h3 className="device-name">{device.nickname}</h3>
@@ -543,7 +543,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
                 className="btn btn-secondary btn-sm"
                 disabled={!isCamera}
               >
-                <IconExpand />
+                <Maximize2 size={14} />
                 Fullscreen
               </button>
               <button
@@ -572,7 +572,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           <header className="fullscreen-header">
             <h2>{fullscreenDevice.nickname}</h2>
             <button onClick={closeFullscreen} className="close-btn" aria-label="Close fullscreen">
-              <IconClose />
+              <Maximize2 size={24} style={{ transform: 'rotate(45deg)' }} />
             </button>
           </header>
           <div className="fullscreen-video-wrapper">
