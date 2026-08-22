@@ -450,6 +450,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [fullscreenDevice, setFullscreenDevice] = useState(null);
   const [deviceVolumes, setDeviceVolumes] = useState({});
   const [activePage, setActivePage] = useState('overview');
+  const multiCamVideoRefs = useRef({});
 
   useEffect(() => {
     listeningSetRef.current = listeningDevices;
@@ -661,7 +662,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     if (!fullscreenDevice) return null;
     const pc = peerConnectionsRef.current.get(fullscreenDevice.id);
     const camEntry = deviceCamerasMap[fullscreenDevice.id] || { cameras: [], activeCameraId: null };
-    const cameras = camEntry.cameras || [];
+const cameras = camEntry.cameras || [];
     const listening = listeningDevices.has(fullscreenDevice.id);
     const vol = localVolumes[fullscreenDevice.id] ?? 1;
 
@@ -674,7 +675,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               <h2>{fullscreenDevice.nickname}</h2>
               {cameras.length > 0 && (
                 <span className="camera-count-badge">
-                  CAM {Math.max(1, cameras.findIndex(c => c.id === camEntry.activeCameraId) + 1)}/{cameras.length}
+                  {cameras.length} CAMERA{cameras.length > 1 ? 'S' : ''} LIVE
                 </span>
               )}
             </div>
@@ -684,31 +685,35 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           </header>
 
           <div className="fullscreen-video-wrapper">
-            <video
-              ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
-              autoPlay
-              playsInline
-              muted
-              className="fullscreen-video"
-            />
-
-            {cameras.length > 1 && (
-              <>
-                <button
-                  className="zoom-nav-btn left"
-                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(fullscreenDevice, -1); }}
-                  aria-label="Previous camera"
-                >
-                  <ChevronLeft size={26} />
-                </button>
-                <button
-                  className="zoom-nav-btn right"
-                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(fullscreenDevice, 1); }}
-                  aria-label="Next camera"
-                >
-                  <ChevronRight size={26} />
-                </button>
-              </>
+            {cameras.length === 1 ? (
+              // Single camera - show large
+              <video
+                ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
+                autoPlay
+                playsInline
+                muted
+                className="fullscreen-video"
+              />
+            ) : (
+              // Multiple cameras - show grid
+              <div className="multi-camera-grid">
+                {cameras.map((cam, idx) => (
+                  <div key={cam.id || idx} className="multi-cam-tile">
+                    <video
+                      ref={(el) => {
+                        const trackKey = `${fullscreenDevice.id}-${cam.id}-fullscreen`;
+                        multiCamVideoRefs.current[trackKey] = el;
+                        registerVideoElement(trackKey, el, 'fullscreen');
+                      }}
+                      autoPlay
+                      playsInline
+                      muted
+                      className="multi-cam-video"
+                    />
+                    <div className="multi-cam-label">{cam.label || `Camera ${idx + 1}`}</div>
+                  </div>
+                ))}
+              </div>
             )}
 
             <div className="fullscreen-overlay">

@@ -30,6 +30,7 @@ function App() {
   const [reconnecting, setReconnecting] = useState(false);
   const [availableCameras, setAvailableCameras] = useState([]);
   const [activeCameraId, setActiveCameraId] = useState(null);
+  const [allCameraStreams, setAllCameraStreams] = useState({});
   const deviceIdRef = useRef(null);
 
   const videoRef = useRef(null);
@@ -392,7 +393,7 @@ const requestMediaPermission = async (requestedRole) => {
   const answerHandlerRef = useRef(null);
 
   const startCameraStreaming = async () => {
-    if (!streamRef.current || !socket) return;
+    if (!socket) return;
 
     const currentDeviceId = deviceIdRef.current;
     if (!currentDeviceId) {
@@ -410,12 +411,101 @@ const requestMediaPermission = async (requestedRole) => {
       answerHandlerRef.current = null;
     }
 
+    // Stop any existing camera streams
+    Object.values(allCameraStreams).forEach(stream => {
+      stream.getTracks().forEach(t => t.stop());
+    });
+    setAllCameraStreams({});
+
     try {
+      // Enumerate all cameras first
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      
+      if (videoDevices.length === 0) {
+        setError('No cameras found');
+        return;
+      }
+
+      console.log('Found cameras:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
+      
+      // Get stream from each camera
+      const cameraStreams = {};
+      const combinedStream = new MediaStream();
+      let audioTrack = null;
+
+      for (const device of videoDevices) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              deviceId: { exact: device.deviceId },
+              width: { ideal: 1280, max: 1920 },
+              height: { ideal: 720, max: 1080 }
+            },
+            audio: false
+          });
+          
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            // Label the track with device info
+            videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
+            combinedStream.addTrack(videoTrack);
+            cameraStreams[device.deviceId] = stream;
+          }
+        } catch (err) {
+          console.warn(`Failed to get stream from camera ${device.deviceId}:`, err);
+        }
+      }
+
+      // Also get audio track once
+      try {
+        const audioStream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true
+          },
+          video: false
+        });
+        audioTrack = audioStream.getAudioTracks()[0];
+        if (audioTrack) {
+          combinedStream.addTrack(audioTrack);
+        }
+      } catch (err) {
+        console.warn('Failed to get audio:', err);
+      }
+
+      if (combinedStream.getVideoTracks().length === 0) {
+        setError('No camera streams available');
+        return;
+      }
+
+      setAllCameraStreams(cameraStreams);
+      streamRef.current = combinedStream;
+
+      // Update available cameras list
+      const camList = videoDevices.map(d => ({ 
+        id: d.deviceId, 
+        label: d.label || `Camera ${d.deviceId.slice(0, 8)}` 
+      }));
+      setAvailableCameras(camList);
+      
+      const firstCamId = camList[0]?.id;
+      if (firstCamId) {
+        setActiveCameraId(firstCamId);
+      }
+
+      // Set local preview to first camera
+      if (videoRef.current) {
+        videoRef.current.srcObject = combinedStream;
+        videoRef.current.play().catch(() => {});
+      }
+
+      // Create peer connection and add all tracks
       const pc = new PeerConnectionManager(socket, 'host', true);
+      await pc.addLocalStream(combinedStream);
 
-      await pc.addLocalStream(streamRef.current);
-
-      const sentTracks = streamRef.current.getTracks();
+      const sentTracks = combinedStream.getTracks();
       console.log('Sending tracks:', sentTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
 
       pc.onConnectionStateChange = (state) => {
@@ -452,25 +542,10 @@ const requestMediaPermission = async (requestedRole) => {
       peerConnectionRef.current = pc;
       setIsLive(true);
 
-      // Tell the host which cameras this device exposes and which one is active
-      try {
-        const cams = availableCameras.length > 0
-          ? availableCameras
-          : await navigator.mediaDevices.enumerateDevices()
-              .then(all => all.filter(d => d.kind === 'videoinput').map(d => ({ id: d.deviceId, label: d.label || 'Camera' })))
-              .then(list => { setAvailableCameras(list); return list; });
-        socket.emit('device-cameras', { cameras: cams });
-        let active = activeCameraId;
-        if (!active && streamRef.current?.getVideoTracks()[0]) {
-          const settings = streamRef.current.getVideoTracks()[0].getSettings();
-          active = cams.find(c => c.id === settings.deviceId)?.id || cams[0]?.id || null;
-          setActiveCameraId(active);
-        }
-        if (active) {
-          socket.emit('camera-switched', { cameraId: active });
-        }
-      } catch (err) {
-        console.warn('Failed to report camera list:', err);
+      // Tell the host which cameras this device exposes
+      socket.emit('device-cameras', { cameras: camList });
+      if (firstCamId) {
+        socket.emit('camera-switched', { cameraId: firstCamId });
       }
 
       try {
@@ -496,6 +571,12 @@ const requestMediaPermission = async (requestedRole) => {
       peerConnectionRef.current = null;
     }
 
+    // Stop all individual camera streams
+    Object.values(allCameraStreams).forEach(stream => {
+      stream.getTracks().forEach(track => track.stop());
+    });
+    setAllCameraStreams({});
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -511,66 +592,15 @@ const requestMediaPermission = async (requestedRole) => {
     }
 
     setIsLive(false);
+    setAvailableCameras([]);
+    setActiveCameraId(null);
   };
 
-  const switchToCamera = async (cameraId) => {
+  const switchToCamera = (cameraId) => {
     if (!cameraId || !socket || !deviceIdRef.current) return;
-
-    try {
-      console.log('Switching to camera:', cameraId);
-      const newStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          deviceId: { exact: cameraId },
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 }
-        },
-        audio: false
-      });
-      const newTrack = newStream.getVideoTracks()[0];
-      if (!newTrack) throw new Error('No video track on requested camera');
-
-      const oldStream = streamRef.current;
-      const oldVideoTracks = oldStream ? oldStream.getVideoTracks() : [];
-
-      // Swap the track on the live WebRTC connection without renegotiation
-      let replaced = false;
-      const pc = peerConnectionRef.current;
-      if (pc?.pc) {
-        const sender = pc.pc.getSenders().find(s => s.track && s.track.kind === 'video');
-        if (sender) {
-          await sender.replaceTrack(newTrack);
-          replaced = true;
-        }
-      }
-
-      // Keep the local stream + preview in sync
-      if (oldStream) {
-        oldVideoTracks.forEach(t => oldStream.removeTrack(t));
-        oldStream.addTrack(newTrack);
-        streamRef.current = oldStream;
-      } else {
-        streamRef.current = newStream;
-      }
-      oldVideoTracks.forEach(t => t.stop());
-
-      if (videoRef.current) {
-        videoRef.current.srcObject = streamRef.current;
-        videoRef.current.play().catch(() => {});
-      }
-
-      setActiveCameraId(cameraId);
-      socket.emit('camera-switched', { cameraId });
-
-      // Fallback: full renegotiation if hot-swap wasn't possible
-      if (!replaced) {
-        console.warn('replaceTrack unavailable, restarting stream');
-        if (stateRef.current.isJoined) {
-          startCameraStreaming();
-        }
-      }
-    } catch (err) {
-      console.error('Failed to switch camera:', err);
-    }
+    console.log('Switching active camera to:', cameraId);
+    setActiveCameraId(cameraId);
+    socket.emit('camera-switched', { cameraId });
   };
 
   useEffect(() => {
