@@ -473,7 +473,7 @@ const requestMediaPermission = async (requestedRole) => {
           <h2>Error</h2>
           <p>{error}</p>
           <button onClick={() => window.location.href = '/'} className="btn btn-primary">
-            <IconBack />
+            <ArrowLeft size={16} />
             Go Back
           </button>
         </div>
