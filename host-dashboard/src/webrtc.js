@@ -69,6 +69,19 @@ export class PeerConnectionManager {
       if (this.onConnectionStateChange) {
         this.onConnectionStateChange(this.pc.connectionState);
       }
+      // Attempt ICE restart on failure
+      if (this.pc.connectionState === 'failed') {
+        console.warn('Host WebRTC connection failed, attempting ICE restart...');
+        this.pc.restartIce();
+      }
+    };
+
+    this.pc.oniceconnectionstatechange = () => {
+      console.log('Host ICE connection state:', this.pc.iceConnectionState);
+      if (this.pc.iceConnectionState === 'failed') {
+        console.warn('Host ICE connection failed, restarting ICE...');
+        this.pc.restartIce();
+      }
     };
   }
 
