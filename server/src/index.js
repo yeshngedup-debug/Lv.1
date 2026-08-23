@@ -620,26 +620,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', sessions: sessions.size });
 });
 
-app.get('/join', (req, res) => {
-  res.sendFile(join(participantPagePath, 'index.html'));
-});
-
-app.get('/join/:sessionId', (req, res) => {
-  res.sendFile(join(participantPagePath, 'index.html'));
-});
-
-app.get('/host/*', (req, res) => {
-  res.sendFile(join(hostDashboardPath, 'index.html'));
-});
-
-app.get('/p/*', (req, res) => {
-  res.sendFile(join(participantPagePath, 'index.html'));
-});
-
-app.get('*', (req, res) => {
-  res.sendFile(join(hostDashboardPath, 'index.html'));
-});
-
 setInterval(() => {
   for (const [sessionId, session] of sessions.entries()) {
     if (session.isExpired()) {
