@@ -89,25 +89,27 @@ app.use(express.json());
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {
-  // Participant page assets (must come before host dashboard assets)
+  // Participant page at /join
   app.use('/join/assets', express.static(join(participantPagePath, 'assets')));
-  app.use('/p/assets', express.static(join(participantPagePath, 'assets')));
   app.use('/join/manifest.webmanifest', express.static(join(participantPagePath, 'manifest.webmanifest')));
   app.use('/join/sw.js', express.static(join(participantPagePath, 'sw.js')));
   app.use('/join/workbox-e4022e15.js', express.static(join(participantPagePath, 'workbox-e4022e15.js')));
   app.use('/join/favicon.ico', express.static(join(participantPagePath, 'favicon.ico')));
+  app.use('/join', express.static(participantPagePath));
+
+  // Participant page at /p (alias)
+  app.use('/p/assets', express.static(join(participantPagePath, 'assets')));
   app.use('/p/manifest.webmanifest', express.static(join(participantPagePath, 'manifest.webmanifest')));
   app.use('/p/sw.js', express.static(join(participantPagePath, 'sw.js')));
   app.use('/p/workbox-e4022e15.js', express.static(join(participantPagePath, 'workbox-e4022e15.js')));
   app.use('/p/favicon.ico', express.static(join(participantPagePath, 'favicon.ico')));
+  app.use('/p', express.static(participantPagePath));
 
   // Host dashboard assets
   app.use('/assets', express.static(join(hostDashboardPath, 'assets')));
   app.use('/favicon.ico', express.static(join(hostDashboardPath, 'favicon.ico')));
 
-  // Static HTML fallbacks
-  app.use('/join', express.static(participantPagePath));
-  app.use('/p', express.static(participantPagePath));
+  // Host dashboard HTML fallback
   app.use(express.static(hostDashboardPath));
 }
 
