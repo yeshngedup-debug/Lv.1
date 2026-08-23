@@ -823,31 +823,30 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 ) : (
               isCamera && (
                 <div className="device-quick-actions">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setFullscreenDevice(device);
-                    }}
-                    className="btn btn-primary btn-sm"
-                    title="View camera fullscreen"
-                  >
-                    <Video size={14} />
-                    <span>View Camera</span>
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setMotionDetectionEnabled(prev => !prev);
-                    }}
-                    className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
-                    title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
-                  >
-                    {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
-                    <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
-                  </button>
-                </div>
-              )
-            )}
+<button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFullscreenDevice(device);
+                      }}
+                      className="btn btn-primary btn-sm"
+                      title="View camera fullscreen"
+                    >
+                      <Video size={14} />
+                      <span>View Camera</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMotionDetectionEnabled(prev => !prev);
+                      }}
+                      className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
+                      title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+                    >
+                      {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
+                      <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
+                    </button>
+                  </div>
+                ) : (
       </article>
     );
   };
@@ -921,11 +920,14 @@ const cameras = camEntry.cameras || [];
                   <span>{listening ? 'Listening' : 'Listen'}</span>
                 </button>
 
-                <button
-                  onClick={() => setMotionDetectionEnabled(prev => !prev)}
-                  className={`motion-detection-toggle ${motionDetectionEnabled ? 'on' : ''}`}
-                  title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
-                >
+  <button
+    onClick={(e) => {e.stopPropagation(); setMotionDetectionEnabled(prev => !prev);}}
+    className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
+    title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+  >
+    {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
+    <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
+  </button>
                   {motionDetectionEnabled ? <Eye size={15} /> : <BellOff size={15} />}
                   <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
                 </button>
