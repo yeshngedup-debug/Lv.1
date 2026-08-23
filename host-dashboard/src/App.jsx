@@ -686,6 +686,9 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
   const closeFullscreen = () => setFullscreenDevice(null);
 
+  const cameraDevices = useMemo(() => devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false), [devices]);
+  const speakerDevices = useMemo(() => devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false), [devices]);
+
   if (!sessionId) {
     return (
       <GridlineShell
@@ -708,9 +711,6 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       </GridlineShell>
     );
   }
-
-  const cameraDevices = useMemo(() => devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false), [devices]);
-  const speakerDevices = useMemo(() => devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false), [devices]);
 
   const DeviceCard = React.memo(({ device, isSelected, onClick, onVolumeChange, volume }) => {
     const isCamera = device.role === 'camera' || (device.role === 'device' && device.isCameraEnabled);
