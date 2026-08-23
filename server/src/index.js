@@ -620,6 +620,40 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', sessions: sessions.size });
 });
 
+// Root endpoint - provides links to frontend services
+app.get('/', (req, res) => {
+  const serverUrl = req.protocol + '://' + req.get('host');
+  const hostUrl = process.env.HOST_DASHBOARD_URL || serverUrl.replace('iris-syncd-server', 'iris-syncd-host');
+  const participantUrl = process.env.PARTICIPANT_PAGE_URL || serverUrl.replace('iris-syncd-server', 'iris-syncd-participant');
+  
+  res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Iris SYNCD</title>
+  <style>
+    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 4rem auto; padding: 2rem; text-align: center; }
+    .links a { display: inline-block; margin: 1rem; padding: 1rem 2rem; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; }
+    .links a:hover { background: #1d4ed8; }
+    .api { color: #666; font-size: 0.9rem; margin-top: 2rem; }
+  </style>
+</head>
+<body>
+  <h1>🎵 Iris SYNCD</h1>
+  <p>Multi-Device Party Speaker & Camera Dashboard</p>
+  <div class="links">
+    <a href="${hostUrl}">Host Dashboard</a>
+    <a href="${participantUrl}">Join as Participant</a>
+  </div>
+  <div class="api">
+    <p>API: <code>GET /api/health</code></p>
+    <p>WebSocket: <code>${serverUrl.replace('http', 'ws')}/socket.io</code></p>
+  </div>
+</body>
+</html>
+  `);
+});
+
 setInterval(() => {
   for (const [sessionId, session] of sessions.entries()) {
     if (session.isExpired()) {
