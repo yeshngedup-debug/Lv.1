@@ -5,12 +5,13 @@ import { createAdapter } from '@socket.io/redis-adapter';
 import { createClient } from 'redis';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
+import helmet from 'helmet';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import os from 'os';
+import winston from 'winston';
 
 dotenv.config();
 
@@ -21,36 +22,61 @@ const __dirname = dirname(__filename);
 const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
 const participantPagePath = join(__dirname, '../../participant-page/dist');
 
-const isProduction = process.env.NODE_ENV === 'production';
-const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
-  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim())
-  : isProduction ? [] : ['http://localhost:5173', 'http://localhost:5174'];
+// Configuration
+const config = {
+  port: parseInt(process.env.PORT) || 3001,
+  baseUrl: process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`,
+  sessionTimeout: parseInt(process.env.SESSION_TIMEOUT) || 3600000,
+  nodeEnv: process.env.NODE_ENV || 'development',
+  corsOrigin: process.env.CORS_ORIGIN || '*',
+  redisUrl: process.env.REDIS_URL || null,
+  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 60000,
+  rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
+  logLevel: process.env.LOG_LEVEL || 'info',
+};
 
-const useCredentials = ALLOWED_ORIGINS.length > 0;
+// Winston logger
+const logger = winston.createLogger({
+  level: config.logLevel,
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.errors({ stack: true }),
+    winston.format.json()
+  ),
+  defaultMeta: { service: 'iris-syncd-server' },
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.combine(
+        winston.format.colorize(),
+        winston.format.simple()
+      ),
+    }),
+  ],
+});
 
-// Redis clients for adapter and caching
+// Redis clients
 let redisClient = null;
 let redisSubClient = null;
 let redisReady = false;
 
 async function initRedis() {
-  if (!process.env.REDIS_URL) {
-    console.log('Redis not configured, running in single-instance mode');
+  if (!config.redisUrl) {
+    logger.warn('Redis not configured, running in single-instance mode');
     return;
   }
-  
+
   try {
-    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisClient = createClient({ url: config.redisUrl });
     redisSubClient = redisClient.duplicate();
-    
-    redisClient.on('error', (err) => console.error('Redis Client Error:', err));
-    redisSubClient.on('error', (err) => console.error('Redis Sub Client Error:', err));
-    
+
+    redisClient.on('error', (err) => logger.error('Redis Client Error', { error: err.message }));
+    redisSubClient.on('error', (err) => logger.error('Redis Sub Client Error', { error: err.message }));
+
     await Promise.all([redisClient.connect(), redisSubClient.connect()]);
     redisReady = true;
-    console.log('Redis connected successfully');
+    logger.info('Redis connected successfully');
   } catch (err) {
-    console.error('Failed to connect to Redis:', err);
+    logger.error('Failed to connect to Redis', { error: err.message });
     redisReady = false;
   }
 }
@@ -58,65 +84,105 @@ async function initRedis() {
 const app = express();
 const server = createServer(app);
 
-const PORT = process.env.PORT || 3001;
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `http://localhost:${PORT}`;
-const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT) || 3600000; // 1 hour default
+const PORT = config.port;
+const BASE_URL = config.baseUrl;
+const SESSION_TIMEOUT = config.sessionTimeout;
 
 const io = new Server(server, {
   cors: {
-    origin: '*',
-    methods: ['GET', 'POST']
+    origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map(o => o.trim()),
+    methods: ['GET', 'POST'],
+    credentials: true,
   },
   pingInterval: 10000,
   pingTimeout: 10000,
   transports: ['websocket', 'polling'],
-  maxHttpBufferSize: 1e7
+  maxHttpBufferSize: 1e7,
 });
 
 // Initialize Redis adapter for horizontal scaling
 initRedis().then(() => {
   if (redisReady && redisClient && redisSubClient) {
     io.adapter(createAdapter(redisClient, redisSubClient));
-    console.log('Socket.IO Redis adapter enabled for horizontal scaling');
+    logger.info('Socket.IO Redis adapter enabled for horizontal scaling');
   }
 });
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST']
+// Security middleware
+app.use(helmet({
+  contentSecurityPolicy: false, // WebSocket needs inline scripts
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
-app.use(express.json());
+
+// CORS configuration
+app.use(cors({
+  origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map(o => o.trim()),
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+}));
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Rate limiting
+const apiLimiter = rateLimit({
+  windowMs: config.rateLimitWindowMs,
+  max: config.rateLimitMaxRequests,
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+app.use('/api/', apiLimiter);
+
+// Request logging
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    logger.info('HTTP Request', {
+      method: req.method,
+      url: req.url,
+      status: res.statusCode,
+      duration: `${duration}ms`,
+      ip: req.ip,
+    });
+  });
+  next();
+});
 
 // Serve static files in production
-if (process.env.NODE_ENV === 'production') {
+if (config.nodeEnv === 'production') {
   // Participant page at /join
-  app.use('/join/assets', express.static(join(participantPagePath, 'assets')));
-  app.use('/join/manifest.webmanifest', express.static(join(participantPagePath, 'manifest.webmanifest')));
-  app.use('/join/sw.js', express.static(join(participantPagePath, 'sw.js')));
-  app.use('/join/workbox-e4022e15.js', express.static(join(participantPagePath, 'workbox-e4022e15.js')));
-  app.use('/join/favicon.ico', express.static(join(participantPagePath, 'favicon.ico')));
-  app.use('/join', express.static(participantPagePath));
+  app.use('/join/assets', express.static(join(__dirname, '../../participant-page/dist/assets')));
+  app.use('/join/manifest.webmanifest', express.static(join(__dirname, '../../participant-page/dist/manifest.webmanifest')));
+  app.use('/join/sw.js', express.static(join(__dirname, '../../participant-page/dist/sw.js')));
+  app.use('/join/workbox-e4022e15.js', express.static(join(__dirname, '../../participant-page/dist/workbox-e4022e15.js')));
+  app.use('/join/favicon.ico', express.static(join(__dirname, '../../participant-page/dist/favicon.ico')));
+  app.use('/join', express.static(join(__dirname, '../../participant-page/dist')));
 
   // Participant page at /p (alias)
-  app.use('/p/assets', express.static(join(participantPagePath, 'assets')));
-  app.use('/p/manifest.webmanifest', express.static(join(participantPagePath, 'manifest.webmanifest')));
-  app.use('/p/sw.js', express.static(join(participantPagePath, 'sw.js')));
-  app.use('/p/workbox-e4022e15.js', express.static(join(participantPagePath, 'workbox-e4022e15.js')));
-  app.use('/p/favicon.ico', express.static(join(participantPagePath, 'favicon.ico')));
-  app.use('/p', express.static(participantPagePath));
+  app.use('/p/assets', express.static(join(__dirname, '../../participant-page/dist/assets')));
+  app.use('/p/manifest.webmanifest', express.static(join(__dirname, '../../participant-page/dist/manifest.webmanifest')));
+  app.use('/p/sw.js', express.static(join(__dirname, '../../participant-page/dist/sw.js')));
+  app.use('/p/workbox-e4022e15.js', express.static(join(__dirname, '../../participant-page/dist/workbox-e4022e15.js')));
+  app.use('/p/favicon.ico', express.static(join(__dirname, '../../participant-page/dist/favicon.ico')));
+  app.use('/p', express.static(join(__dirname, '../../participant-page/dist')));
 
   // Host dashboard assets
-  app.use('/assets', express.static(join(hostDashboardPath, 'assets')));
-  app.use('/favicon.ico', express.static(join(hostDashboardPath, 'favicon.ico')));
+  app.use('/assets', express.static(join(__dirname, '../../host-dashboard/dist/assets')));
+  app.use('/favicon.ico', express.static(join(__dirname, '../../host-dashboard/dist/favicon.ico')));
 
   // Host dashboard HTML fallback
-  app.use(express.static(hostDashboardPath));
+  app.use(express.static(join(__dirname, '../../host-dashboard/dist')));
 }
 
 // Redis-backed session store for horizontal scaling
 class SessionStore {
   constructor() {
-    this.localCache = new Map(); // Fallback for when Redis is unavailable
+    this.localCache = new Map();
   }
 
   async get(sessionId) {
@@ -125,7 +191,7 @@ class SessionStore {
         const data = await redisClient.get(`session:${sessionId}`);
         if (data) return JSON.parse(data);
       } catch (err) {
-        console.warn('Redis get failed, falling back to local cache:', err);
+        logger.warn('Redis get failed, falling back to local cache', { error: err.message });
       }
     }
     return this.localCache.get(sessionId) || null;
@@ -136,7 +202,7 @@ class SessionStore {
       try {
         await redisClient.setEx(`session:${sessionId}`, Math.ceil(SESSION_TIMEOUT / 1000), JSON.stringify(session));
       } catch (err) {
-        console.warn('Redis set failed:', err);
+        logger.warn('Redis set failed', { error: err.message });
       }
     }
     this.localCache.set(sessionId, session);
@@ -147,7 +213,7 @@ class SessionStore {
       try {
         await redisClient.del(`session:${sessionId}`);
       } catch (err) {
-        console.warn('Redis delete failed:', err);
+        logger.warn('Redis delete failed', { error: err.message });
       }
     }
     this.localCache.delete(sessionId);
@@ -158,7 +224,7 @@ class SessionStore {
       try {
         return await redisClient.exists(`session:${sessionId}`) === 1;
       } catch (err) {
-        console.warn('Redis exists failed:', err);
+        logger.warn('Redis exists failed', { error: err.message });
       }
     }
     return this.localCache.has(sessionId);
@@ -191,7 +257,7 @@ class Session {
       volume: 1,
       lastPing: Date.now(),
       isCameraEnabled: isCameraEnabled ?? (role === 'camera' || role === 'device'),
-      isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device')
+      isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device'),
     });
   }
 
@@ -217,7 +283,6 @@ async function getSession(sessionId) {
     if (data) {
       const session = new Session(data.id);
       Object.assign(session, data);
-      // Convert devices back to Map
       session.devices = new Map(Object.entries(data.devices || {}));
       return session;
     }
@@ -227,7 +292,6 @@ async function getSession(sessionId) {
 
 async function setSession(sessionId, session) {
   if (redisReady) {
-    // Convert Map to Object for Redis serialization
     const sessionToSave = { ...session, devices: Object.fromEntries(session.devices) };
     await sessionStore.set(sessionId, sessionToSave);
   }
@@ -248,359 +312,132 @@ async function hasSession(sessionId) {
   return sessions.has(sessionId);
 }
 
+// Socket.IO connection handling
 io.on('connection', (socket) => {
-  console.log(`Client connected: ${socket.id}`);
+  logger.info('Client connected', { socketId: socket.id, ip: socket.handshake.address });
 
   socket.on('create-session', async (callback) => {
-    const sessionId = uuidv4().slice(0, 8).toUpperCase();
-    const session = new Session(sessionId);
-    session.hostSocketId = socket.id;
-    sessions.set(sessionId, session);
+    try {
+      const sessionId = uuidv4().slice(0, 8).toUpperCase();
+      const session = new Session(sessionId);
+      session.hostSocketId = socket.id;
+      sessions.set(sessionId, session);
 
-    socket.join(`session:${sessionId}`);
-    socket.data.sessionId = sessionId;
-    socket.data.role = 'host';
+      socket.join(`session:${sessionId}`);
+      socket.data.sessionId = sessionId;
+      socket.data.role = 'host';
 
-    const joinUrl = `${BASE_URL}/join/${sessionId}`;
-    const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
+      const joinUrl = `${BASE_URL}/join/${sessionId}`;
+      const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
 
-    console.log(`Session created: ${sessionId}`);
-    callback({
-      sessionId,
-      joinUrl,
-      qrCode: qrCodeDataUrl
-    });
-  });
-
-  socket.on('rejoin-session', ({ sessionId }, callback) => {
-    const session = sessions.get(sessionId);
-    if (!session) {
-      return callback({ error: 'Session not found' });
-    }
-
-    if (session.isExpired()) {
-      sessions.delete(sessionId);
-      return callback({ error: 'Session has expired' });
-    }
-
-    // Update host socket ID for reconnection
-    session.hostSocketId = socket.id;
-    socket.join(`session:${sessionId}`);
-    socket.data.sessionId = sessionId;
-    socket.data.role = 'host';
-
-    callback({
-      devices: Array.from(session.devices.values()).map(d => ({
-        id: d.id,
-        role: d.role,
-        nickname: d.nickname
-      })),
-      isPlaying: session.isPlaying,
-      currentTrack: session.currentTrack,
-      playbackPosition: session.playbackPosition,
-      playbackStartedAt: session.playbackStartedAt
-    });
-
-    console.log(`Host reconnected to session: ${sessionId}`);
-  });
-
-  socket.on('join-session', ({ sessionId, role, nickname, deviceId: existingDeviceId, isCameraEnabled, isSpeakerEnabled }, callback) => {
-    const session = sessions.get(sessionId);
-
-    if (!session) {
-      return callback?.({ error: 'Session not found' });
-    }
-
-    if (session.isExpired()) {
-      sessions.delete(sessionId);
-      return callback?.({ error: 'Session has expired' });
-    }
-
-    // Validate role
-    const validRoles = ['speaker', 'camera', 'device'];
-    if (!validRoles.includes(role)) {
-      return callback?.({ error: 'Invalid role. Must be "speaker", "camera", or "device"' });
-    }
-
-    // Sanitize nickname
-    const sanitizedNickname = (nickname || `Device ${session.devices.size + 1}`)
-      .slice(0, 50)
-      .replace(/[<>\"']/g, '');
-
-    let deviceId = existingDeviceId;
-    let isRejoin = false;
-
-    if (deviceId && session.devices.has(deviceId)) {
-      // Re-attaching existing device session
-      const existingDevice = session.devices.get(deviceId);
-      existingDevice.socketId = socket.id;
-      existingDevice.nickname = sanitizedNickname || existingDevice.nickname;
-      existingDevice.role = role;
-      existingDevice.isCameraEnabled = isCameraEnabled ?? (role === 'camera' || role === 'device');
-      existingDevice.isSpeakerEnabled = isSpeakerEnabled ?? (role === 'speaker' || role === 'device');
-      isRejoin = true;
-      console.log(`Device ${deviceId} reconnected to session ${sessionId}`);
-    } else {
-      deviceId = uuidv4();
-      session.addDevice(deviceId, socket.id, role, sanitizedNickname);
-      // Store capability flags
-      const device = session.devices.get(deviceId);
-      if (device) {
-        device.isCameraEnabled = isCameraEnabled ?? (role === 'camera' || role === 'device');
-        device.isSpeakerEnabled = isSpeakerEnabled ?? (role === 'speaker' || role === 'device');
-      }
-      console.log(`Device ${deviceId} joined session ${sessionId} as ${role}`, { isCameraEnabled, isSpeakerEnabled });
-    }
-
-    socket.join(`session:${sessionId}`);
-    socket.data.sessionId = sessionId;
-    socket.data.deviceId = deviceId;
-    socket.data.role = role;
-
-    callback?.({
-      deviceId,
-      isRejoin,
-      session: {
-        id: sessionId,
-        isPlaying: session.isPlaying,
-        currentTrack: session.currentTrack,
-        playbackPosition: session.playbackPosition,
-        playbackStartedAt: session.playbackStartedAt
-      }
-    });
-
-    // Notify host & session devices
-    io.to(`session:${sessionId}`).emit('device-joined', {
-      deviceId,
-      role,
-      nickname: session.devices.get(deviceId).nickname,
-      isRejoin
-    });
-  });
-
-  socket.on('ping', () => {
-    const { sessionId, deviceId } = socket.data;
-    if (sessionId && deviceId) {
-      const session = sessions.get(sessionId);
-      if (session) {
-        const device = session.devices.get(deviceId);
-        if (device) {
-          device.lastPing = Date.now();
-        }
-      }
-    }
-    socket.emit('pong');
-  });
-
-  socket.on('disconnect', () => {
-    const { sessionId, deviceId, role } = socket.data;
-
-    if (!sessionId) return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    if (role === 'host') {
-      // Host disconnected - notify other devices but DON'T delete session
-      // Allow host to reconnect via rejoin-session
-      io.to(`session:${sessionId}`).emit('host-disconnected');
-      console.log(`Host disconnected from session ${sessionId}, session preserved for reconnection`);
-    } else if (deviceId) {
-      // Give 15s grace period for mobile reconnection before removing device
-      setTimeout(() => {
-        const currentDev = session.devices.get(deviceId);
-        if (currentDev && currentDev.socketId === socket.id) {
-          session.removeDevice(deviceId);
-          io.to(`session:${sessionId}`).emit('device-left', { deviceId });
-          console.log(`Device ${deviceId} left session ${sessionId} after grace period`);
-        }
-      }, 15000);
-    }
-  });
-
-  socket.on('remove-device', ({ deviceId }) => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    const device = session.devices.get(deviceId);
-    if (device) {
-      io.to(device.socketId).emit('removed-from-session');
-      session.removeDevice(deviceId);
-      io.to(`session:${sessionId}`).emit('device-left', { deviceId });
-    }
-  });
-
-  socket.on('start-playing', ({ trackUrl, trackName, duration }) => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    session.currentTrack = { url: trackUrl, name: trackName, duration };
-    session.isPlaying = true;
-    session.playbackPosition = 0;
-    session.playbackStartedAt = Date.now();
-
-    io.to(`session:${sessionId}`).emit('playback-started', {
-      trackUrl,
-      trackName,
-      duration,
-      serverTimestamp: Date.now()
-    });
-  });
-
-  socket.on('pause-playing', () => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    session.isPlaying = false;
-    session.playbackPosition = (Date.now() - session.playbackStartedAt) / 1000;
-
-    io.to(`session:${sessionId}`).emit('playback-paused', {
-      position: session.playbackPosition
-    });
-  });
-
-  socket.on('resume-playing', () => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    session.isPlaying = true;
-    session.playbackStartedAt = Date.now() - (session.playbackPosition * 1000);
-
-    io.to(`session:${sessionId}`).emit('playback-resumed', {
-      serverTimestamp: Date.now(),
-      position: session.playbackPosition
-    });
-  });
-
-  socket.on('seek-playing', ({ position }) => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    session.playbackPosition = position;
-    session.playbackStartedAt = Date.now() - (position * 1000);
-
-    io.to(`session:${sessionId}`).emit('playback-seeked', {
-      position,
-      serverTimestamp: Date.now()
-    });
-  });
-
-  socket.on('update-device-volume', ({ deviceId, volume }) => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    const device = session.devices.get(deviceId);
-    if (device) {
-      device.volume = volume;
-      io.to(device.socketId).emit('volume-changed', { volume });
-    }
-  });
-
-  socket.on('push-to-talk-start', () => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    io.to(`session:${sessionId}`).emit('host-mic-active');
-  });
-
-  socket.on('push-to-talk-stop', () => {
-    const { sessionId, role } = socket.data;
-    if (role !== 'host') return;
-
-    io.to(`session:${sessionId}`).emit('host-mic-inactive');
-  });
-
-  socket.on('camera-offer', ({ deviceId, offer }) => {
-    const { sessionId } = socket.data;
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    // Validate the device belongs to this session and has camera capability
-    const device = session.devices.get(deviceId);
-    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
-
-    const hostSocketId = session.hostSocketId;
-    if (hostSocketId) {
-      io.to(hostSocketId).emit('camera-offer', { deviceId, offer });
-    }
-  });
-
-  socket.on('camera-answer', ({ deviceId, answer }) => {
-    const { sessionId } = socket.data;
-    const session = sessions.get(sessionId);
-    if (!session) return;
-
-    const device = session.devices.get(deviceId);
-    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
-
-    io.to(device.socketId).emit('camera-answer', { answer });
-  });
-
-  // Participant reports its available cameras to the host
-  socket.on('device-cameras', ({ cameras }) => {
-    const { sessionId, deviceId, role } = socket.data;
-    const session = sessions.get(sessionId);
-    if (!session || !Array.isArray(cameras)) return;
-
-    const device = session.devices.get(deviceId);
-    if (!device || (role !== 'camera' && role !== 'device' && !device.isCameraEnabled)) return;
-
-    const hostSocketId = session.hostSocketId;
-    if (hostSocketId) {
-      io.to(hostSocketId).emit('device-cameras-update', {
-        deviceId,
-        cameras: cameras.slice(0, 8).map(c => ({
-          id: String(c.id || ''),
-          label: String(c.label || 'Camera').slice(0, 60)
-        }))
+      logger.info('Session created', { sessionId, hostSocketId: socket.id });
+      callback({
+        sessionId,
+        joinUrl,
+        qrCode: qrCodeDataUrl,
       });
+    } catch (err) {
+      logger.error('Failed to create session', { error: err.message });
+      callback({ error: 'Failed to create session' });
     }
   });
 
-  // Host requests a camera switch on a specific device
-  socket.on('switch-camera', ({ deviceId, cameraId }) => {
-    const { sessionId, role } = socket.data;
-    const session = sessions.get(sessionId);
-    if (!session || role !== 'host') return;
+  socket.on('rejoin-session', async ({ sessionId }, callback) => {
+    try {
+      const session = await getSession(sessionId);
+      if (!session) {
+        return callback({ error: 'Session not found' });
+      }
 
-    const device = session.devices.get(deviceId);
-    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
+      session.hostSocketId = socket.id;
+      socket.join(`session:${sessionId}`);
+      socket.data.sessionId = sessionId;
+      socket.data.role = 'host';
+      sessions.set(sessionId, session);
+      await setSession(sessionId, session);
 
-    io.to(device.socketId).emit('switch-camera', { cameraId });
+      const joinUrl = `${BASE_URL}/join/${sessionId}`;
+      const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
+
+      logger.info('Session rejoined', { sessionId, hostSocketId: socket.id });
+      callback({
+        sessionId,
+        joinUrl,
+        qrCode: qrCodeDataUrl,
+      });
+    } catch (err) {
+      logger.error('Failed to rejoin session', { error: err.message });
+      callback({ error: 'Failed to rejoin session' });
+    }
   });
 
-  // Participant confirms the active camera changed
-  socket.on('camera-switched', ({ cameraId }) => {
-    const { sessionId, deviceId } = socket.data;
+  socket.on('join-session', async ({ sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled }, callback) => {
+    try {
+      const session = await getSession(sessionId);
+      if (!session) {
+        return callback({ error: 'Session not found' });
+      }
+
+      const deviceId = socket.id;
+      session.addDevice(deviceId, socket.id, role, nickname, isCameraEnabled, isSpeakerEnabled);
+
+      socket.join(`session:${sessionId}`);
+      socket.data.sessionId = sessionId;
+      socket.data.deviceId = deviceId;
+      socket.data.role = role;
+
+      sessions.set(sessionId, session);
+      await setSession(sessionId, session);
+
+      logger.info('Device joined session', { sessionId, deviceId, role });
+
+      // Notify host
+      if (session.hostSocketId) {
+        io.to(session.hostSocketId).emit('device-joined', {
+          deviceId,
+          role,
+          nickname,
+          isCameraEnabled: isCameraEnabled ?? (role === 'camera' || role === 'device'),
+          isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device'),
+        });
+      }
+
+      callback({
+        sessionId,
+        deviceId,
+        isHost: false,
+      });
+    } catch (err) {
+      logger.error('Failed to join session', { error: err.message });
+      callback({ error: 'Failed to join session' });
+    }
+  });
+
+  socket.on('offer', ({ targetDeviceId, offer }, callback) => {
+    const sessionId = socket.data.sessionId;
+    const session = sessions.get(sessionId);
+    if (!session) return callback({ error: 'Session not found' });
+
+    const targetDevice = session.devices.get(targetDeviceId);
+    if (targetDevice) {
+      io.to(targetDevice.socketId).emit('offer', { offer, fromDeviceId: socket.data.deviceId });
+    }
+    callback({ success: true });
+  });
+
+  socket.on('answer', ({ targetDeviceId, answer }) => {
+    const sessionId = socket.data.sessionId;
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    const hostSocketId = session.hostSocketId;
-    if (hostSocketId && typeof cameraId === 'string') {
-      io.to(hostSocketId).emit('camera-active-update', { deviceId, cameraId });
+    const targetDevice = session.devices.get(targetDeviceId);
+    if (targetDevice) {
+      io.to(targetDevice.socketId).emit('answer', { answer, fromDeviceId: socket.data.deviceId });
     }
   });
 
   socket.on('ice-candidate', ({ targetDeviceId, candidate }) => {
-    const { sessionId } = socket.data;
+    const sessionId = socket.data.sessionId;
     const session = sessions.get(sessionId);
     if (!session) return;
 
@@ -622,12 +459,64 @@ io.on('connection', (socket) => {
     if (role !== 'host') return;
 
     io.to(`session:${sessionId}`).emit('session-ended');
+    deleteSession(sessionId);
     sessions.delete(sessionId);
+    logger.info('Session ended by host', { sessionId });
+  });
+
+  socket.on('device-ping', ({ deviceId }) => {
+    const sessionId = socket.data.sessionId;
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    const device = session.devices.get(deviceId);
+    if (device) {
+      device.lastPing = Date.now();
+    }
+  });
+
+  socket.on('disconnect', (reason) => {
+    const { sessionId, deviceId, role } = socket.data;
+    logger.info('Client disconnected', { socketId: socket.id, sessionId, deviceId, role, reason });
+
+    if (!sessionId || !deviceId) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    if (role === 'host') {
+      io.to(`session:${sessionId}`).emit('session-ended');
+      deleteSession(sessionId);
+      sessions.delete(sessionId);
+    } else {
+      session.removeDevice(deviceId);
+      io.to(`session:${sessionId}`).emit('device-left', { deviceId });
+
+      if (session.hostSocketId) {
+        io.to(session.hostSocketId).emit('device-left', { deviceId });
+      }
+
+      sessions.set(sessionId, session);
+    }
   });
 });
 
-app.get('/api/sessions/:sessionId', (req, res) => {
-  const session = sessions.get(req.params.sessionId);
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    sessions: sessions.size,
+    redis: redisReady ? 'connected' : 'disconnected',
+    memory: process.memoryUsage(),
+    version: process.version,
+  });
+});
+
+// Session info endpoint
+app.get('/api/sessions/:sessionId', async (req, res) => {
+  const session = await getSession(req.params.sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -639,54 +528,126 @@ app.get('/api/sessions/:sessionId', (req, res) => {
       id: d.id,
       role: d.role,
       nickname: d.nickname,
-      isLive: d.isLive
+      isLive: d.isLive,
     })),
     currentTrack: session.currentTrack,
-    isPlaying: session.isPlaying
+    isPlaying: session.isPlaying,
   });
 });
 
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', sessions: sessions.size });
-});
-
-// SPA fallback routes - serve index.html for client-side routing
+// Root endpoint with service info
 app.get('/', (req, res) => {
-  res.sendFile(join(hostDashboardPath, 'index.html'));
-});
-app.get('/join*', (req, res) => {
-  res.sendFile(join(participantPagePath, 'index.html'));
-});
-app.get('/p*', (req, res) => {
-  res.sendFile(join(participantPagePath, 'index.html'));
+  res.json({
+    service: 'Iris SYNCD Server',
+    version: '1.0.0',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      websocket: '/socket.io',
+      hostDashboard: '/',
+      participantPage: '/join',
+      api: {
+        health: 'GET /api/health',
+        session: 'GET /api/sessions/:sessionId',
+      },
+    },
+  });
 });
 
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+// Global error handler
+app.use((err, req, res, next) => {
+  logger.error('Unhandled error', { error: err.message, stack: err.stack });
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+// Cleanup intervals
 setInterval(() => {
   for (const [sessionId, session] of sessions.entries()) {
     if (session.isExpired()) {
       io.to(`session:${sessionId}`).emit('session-ended');
+      deleteSession(sessionId);
       sessions.delete(sessionId);
-      console.log(`Session ${sessionId} expired and cleaned up`);
+      logger.info('Session expired and cleaned up', { sessionId });
     }
   }
 }, 60000);
 
-// Cleanup stale devices (no ping for 30 seconds)
+// Cleanup stale devices
 setInterval(() => {
   const now = Date.now();
-  const STALE_THRESHOLD = 30000; // 30 seconds
-  
+  const STALE_THRESHOLD = 30000;
+
   for (const [sessionId, session] of sessions.entries()) {
     for (const [deviceId, device] of session.devices.entries()) {
       if (now - (device.lastPing || device.joinedAt) > STALE_THRESHOLD) {
-        console.log(`Removing stale device ${deviceId} from session ${sessionId}`);
+        logger.info('Removing stale device', { deviceId, sessionId });
         session.removeDevice(deviceId);
         io.to(`session:${sessionId}`).emit('device-left', { deviceId });
       }
     }
   }
-}, 10000);
+}, 30000);
 
-server.listen(PORT, () => {
-  console.log(`Iris SYNCD server running on port ${PORT}`);
+// Graceful shutdown
+async function shutdown(signal) {
+  logger.info(`${signal} received, starting graceful shutdown`);
+
+  // Stop accepting new connections
+  server.close(async () => {
+    logger.info('HTTP server closed');
+
+    // Close all socket connections
+    io.close(() => {
+      logger.info('Socket.IO server closed');
+    });
+
+    // Close Redis connections
+    if (redisClient) {
+      await redisClient.quit();
+      logger.info('Redis client closed');
+    }
+    if (redisSubClient) {
+      await redisSubClient.quit();
+      logger.info('Redis sub client closed');
+    }
+
+    logger.info('Graceful shutdown complete');
+    process.exit(0);
+  });
+
+  // Force exit after 30 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000);
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+
+// Unhandled rejection/error handlers
+process.on('unhandledRejection', (reason) => {
+  logger.error('Unhandled Rejection', { reason: reason?.message || String(reason) });
 });
+
+process.on('uncaughtException', (err) => {
+  logger.error('Uncaught Exception', { error: err.message, stack: err.stack });
+  shutdown('uncaughtException');
+});
+
+// Start server
+server.listen(PORT, () => {
+  logger.info('Iris SYNCD server started', {
+    port: PORT,
+    baseUrl: BASE_URL,
+    environment: config.nodeEnv,
+    redis: redisReady ? 'connected' : 'not configured',
+  });
+});
+
+export { app, server, io, sessions, getSession, setSession, deleteSession, hasSession, Session, SessionStore };
