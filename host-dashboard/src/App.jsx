@@ -542,31 +542,41 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     );
   }
 
-  const cameraDevices = devices.filter(d => d.role === 'camera');
-  const speakerDevices = devices.filter(d => d.role === 'speaker');
+  const cameraDevices = devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false);
+  const speakerDevices = devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false);
 
   const DeviceCard = ({ device, isSelected, onClick, onVolumeChange, volume }) => {
-    const isCamera = device.role === 'camera';
-    const isSpeaker = device.role === 'speaker';
+    const isCamera = device.role === 'camera' || (device.role === 'device' && device.isCameraEnabled);
+    const isSpeaker = device.role === 'speaker' || (device.role === 'device' && device.isSpeakerEnabled);
+    const isCombined = device.role === 'device';
     const pc = peerConnectionsRef.current.get(device.id);
     const isConnected = pc?.connectionState === 'connected';
 
     return (
       <article
-        className={`device-card ${isSelected ? 'selected' : ''} ${isCamera ? 'camera' : 'speaker'}`}
+        className={`device-card ${isSelected ? 'selected' : ''} ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}
         onClick={onClick}
         data-device-id={device.id}
       >
         <div className="device-card-header">
           <div className="device-avatar">
-            {isCamera ? <Video size={18} /> : <Speaker size={18} />}
+            {isCombined ? (
+              <span className="combined-avatar">
+                <Video size={16} />
+                <Speaker size={12} />
+              </span>
+            ) : isCamera ? (
+              <Video size={18} />
+            ) : (
+              <Speaker size={18} />
+            )}
           </div>
           <div className="device-meta">
             <h3 className="device-name">{device.nickname}</h3>
             <div className="device-status">
               <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}></span>
-              <span className={`device-role-badge ${device.role}`}>
-                {isCamera ? 'Camera' : 'Speaker'}
+              <span className={`device-role-badge ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}>
+                {isCombined ? 'Device' : (isCamera ? 'Camera' : 'Speaker')}
               </span>
             </div>
           </div>

@@ -34,6 +34,10 @@ function App() {
   const [currentQuality, setCurrentQuality] = useState('high');
   const deviceIdRef = useRef(null);
 
+  // Combined role state - true = device acts as both camera and speaker
+  const [isCameraEnabled, setIsCameraEnabled] = useState(true);
+  const [isSpeakerEnabled, setIsSpeakerEnabled] = useState(true);
+
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const streamRef = useRef(null);
@@ -236,19 +240,19 @@ function App() {
     };
   }, [socket, role]);
 
-const requestMediaPermission = async (requestedRole) => {
+const requestMediaPermission = async (needsCamera, needsAudio) => {
     try {
-      if (requestedRole === 'speaker') {
-        // For speaker, we just need to verify audio context can be created
-        // Actual audio playback doesn't require getUserMedia
+      if (!needsCamera && needsAudio) {
+        // Audio only - verify audio context can be created
         const audioContext = new (window.AudioContext || window.webkitAudioContext)();
         await audioContext.close();
         setMediaPermission('granted');
         return true;
-      } else if (requestedRole === 'camera') {
+      } else if (needsCamera) {
+        // Camera needs video + microphone
         console.log('Requesting camera/microphone permissions...');
 
-        // Just get a basic stream to trigger permission prompt, then stop it
+        // Get a basic stream to trigger permission prompt, then stop it
         // We'll get all cameras properly in startCameraStreaming after permission is granted
         try {
           const testStream = await navigator.mediaDevices.getUserMedia({
@@ -290,10 +294,20 @@ const requestMediaPermission = async (requestedRole) => {
   const joinSession = async () => {
     if (!socket || !sessionId || !role) return;
 
-    const hasPermission = await requestMediaPermission(role);
+    // For combined role, we need camera if enabled, audio if speaker enabled
+    const needsCamera = isCameraEnabled;
+    const needsAudio = isSpeakerEnabled || isCameraEnabled; // Camera also needs microphone
+
+    const hasPermission = await requestMediaPermission(needsCamera, needsAudio);
     if (!hasPermission) return;
 
-    socket.emit('join-session', { sessionId, role, nickname }, (response) => {
+    socket.emit('join-session', { 
+      sessionId, 
+      role, 
+      nickname, 
+      isCameraEnabled, 
+      isSpeakerEnabled 
+    }, (response) => {
       if (response.error) {
         setError(response.error);
         return;
@@ -303,8 +317,14 @@ const requestMediaPermission = async (requestedRole) => {
       setIsJoined(true);
       setSessionId(sessionId);
 
-      if (role === 'camera') {
+      if (isCameraEnabled) {
         startCameraStreaming();
+      }
+      if (isSpeakerEnabled) {
+        // Initialize audio sync for speaker
+        if (audioRef.current) {
+          audioSyncRef.current = new AudioSync(audioRef.current, socket);
+        }
       }
     });
   };
@@ -672,31 +692,42 @@ const startCameraStreaming = async () => {
         </div>
 
         <div className="role-selection">
-          <h1>Select Device Role</h1>
+          <h1>Join Session</h1>
           <span className="session-chip">SESSION: {sessionId}</span>
 
           <div className="role-options">
             <button
-              onClick={() => setRole('speaker')}
-              className="role-option"
+              onClick={() => setRole('device')}
+              className="role-option combined"
             >
-              <span className="role-icon"><Speaker size={26} /></span>
-              <span className="role-title">Join as Speaker</span>
+              <span className="role-icon combined">
+                <Video size={26} />
+                <Speaker size={20} style={{ position: 'absolute', bottom: 2, right: 2 }} />
+              </span>
+              <span className="role-title">Join as Device</span>
               <span className="role-description">
-                Synchronize and play audio from the host in real-time
+                Stream live HD video & play synchronized audio from host
               </span>
             </button>
+          </div>
 
-            <button
-              onClick={() => setRole('camera')}
-              className="role-option"
-            >
-              <span className="role-icon" style={{ color: 'var(--accent-magenta)', background: 'rgba(217, 70, 239, 0.12)', borderColor: 'rgba(217, 70, 239, 0.3)' }}><Video size={26} /></span>
-              <span className="role-title">Join as Camera</span>
-              <span className="role-description">
-                Stream live high-definition video directly to the host dashboard
-              </span>
-            </button>
+          <div className="feature-toggles">
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={isCameraEnabled}
+                onChange={(e) => setIsCameraEnabled(e.target.checked)}
+              />
+              <span>Camera Streaming</span>
+            </label>
+            <label className="toggle">
+              <input
+                type="checkbox"
+                checked={isSpeakerEnabled}
+                onChange={(e) => setIsSpeakerEnabled(e.target.checked)}
+              />
+              <span>Audio Playback</span>
+            </label>
           </div>
         </div>
       </div>
@@ -709,19 +740,27 @@ const startCameraStreaming = async () => {
         <div className="permission-screen">
           <h1>Allow Access</h1>
           <p>
-            {role === 'speaker'
-              ? 'Allow audio access to play music from the host'
-              : 'Allow camera and microphone access to stream video'}
+            {isCameraEnabled && isSpeakerEnabled
+              ? 'Allow camera and microphone access for video streaming + audio playback'
+              : isCameraEnabled
+              ? 'Allow camera and microphone access to stream video'
+              : 'Allow audio access to play music from the host'}
           </p>
 
           <div className="permission-card">
             <h3>
-              {role === 'speaker' ? 'Audio Access' : 'Camera & Microphone'}
+              {isCameraEnabled && isSpeakerEnabled
+                ? 'Camera & Microphone + Audio'
+                : isCameraEnabled
+                ? 'Camera & Microphone'
+                : 'Audio Access'}
             </h3>
             <p>
-              {role === 'speaker'
-                ? 'We need audio access to play the host\'s music on your device'
-                : 'We need camera access to stream video and microphone for audio'}
+              {isCameraEnabled && isSpeakerEnabled
+                ? 'We need camera access to stream video, microphone for audio, and audio output for host playback'
+                : isCameraEnabled
+                ? 'We need camera access to stream video and microphone for audio'
+                : 'We need audio access to play the host\'s music on your device'}
             </p>
           </div>
 

@@ -78,7 +78,7 @@ class Session {
     this.playbackStartedAt = null;
   }
 
-  addDevice(deviceId, socketId, role, nickname) {
+  addDevice(deviceId, socketId, role, nickname, isCameraEnabled, isSpeakerEnabled) {
     this.devices.set(deviceId, {
       id: deviceId,
       socketId,
@@ -87,7 +87,9 @@ class Session {
       joinedAt: Date.now(),
       isLive: false,
       volume: 1,
-      lastPing: Date.now()
+      lastPing: Date.now(),
+      isCameraEnabled: isCameraEnabled ?? (role === 'camera' || role === 'device'),
+      isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device')
     });
   }
 
@@ -160,7 +162,7 @@ io.on('connection', (socket) => {
     console.log(`Host reconnected to session: ${sessionId}`);
   });
 
-  socket.on('join-session', ({ sessionId, role, nickname, deviceId: existingDeviceId }, callback) => {
+  socket.on('join-session', ({ sessionId, role, nickname, deviceId: existingDeviceId, isCameraEnabled, isSpeakerEnabled }, callback) => {
     const session = sessions.get(sessionId);
 
     if (!session) {
@@ -173,9 +175,9 @@ io.on('connection', (socket) => {
     }
 
     // Validate role
-    const validRoles = ['speaker', 'camera'];
+    const validRoles = ['speaker', 'camera', 'device'];
     if (!validRoles.includes(role)) {
-      return callback?.({ error: 'Invalid role. Must be "speaker" or "camera"' });
+      return callback?.({ error: 'Invalid role. Must be "speaker", "camera", or "device"' });
     }
 
     // Sanitize nickname
@@ -192,12 +194,20 @@ io.on('connection', (socket) => {
       existingDevice.socketId = socket.id;
       existingDevice.nickname = sanitizedNickname || existingDevice.nickname;
       existingDevice.role = role;
+      existingDevice.isCameraEnabled = isCameraEnabled ?? (role === 'camera' || role === 'device');
+      existingDevice.isSpeakerEnabled = isSpeakerEnabled ?? (role === 'speaker' || role === 'device');
       isRejoin = true;
       console.log(`Device ${deviceId} reconnected to session ${sessionId}`);
     } else {
       deviceId = uuidv4();
       session.addDevice(deviceId, socket.id, role, sanitizedNickname);
-      console.log(`Device ${deviceId} joined session ${sessionId} as ${role}`);
+      // Store capability flags
+      const device = session.devices.get(deviceId);
+      if (device) {
+        device.isCameraEnabled = isCameraEnabled ?? (role === 'camera' || role === 'device');
+        device.isSpeakerEnabled = isSpeakerEnabled ?? (role === 'speaker' || role === 'device');
+      }
+      console.log(`Device ${deviceId} joined session ${sessionId} as ${role}`, { isCameraEnabled, isSpeakerEnabled });
     }
 
     socket.join(`session:${sessionId}`);
@@ -381,9 +391,9 @@ io.on('connection', (socket) => {
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    // Validate the device belongs to this session and is a camera
+    // Validate the device belongs to this session and has camera capability
     const device = session.devices.get(deviceId);
-    if (!device || device.role !== 'camera') return;
+    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
 
     const hostSocketId = session.hostSocketId;
     if (hostSocketId) {
@@ -397,7 +407,7 @@ io.on('connection', (socket) => {
     if (!session) return;
 
     const device = session.devices.get(deviceId);
-    if (!device || device.role !== 'camera') return;
+    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
 
     io.to(device.socketId).emit('camera-answer', { answer });
   });
@@ -406,10 +416,10 @@ io.on('connection', (socket) => {
   socket.on('device-cameras', ({ cameras }) => {
     const { sessionId, deviceId, role } = socket.data;
     const session = sessions.get(sessionId);
-    if (!session || role !== 'camera' || !Array.isArray(cameras)) return;
+    if (!session || !Array.isArray(cameras)) return;
 
     const device = session.devices.get(deviceId);
-    if (!device) return;
+    if (!device || (role !== 'camera' && role !== 'device' && !device.isCameraEnabled)) return;
 
     const hostSocketId = session.hostSocketId;
     if (hostSocketId) {
@@ -430,7 +440,7 @@ io.on('connection', (socket) => {
     if (!session || role !== 'host') return;
 
     const device = session.devices.get(deviceId);
-    if (!device || device.role !== 'camera') return;
+    if (!device || (device.role !== 'camera' && device.role !== 'device' && !device.isCameraEnabled)) return;
 
     io.to(device.socketId).emit('switch-camera', { cameraId });
   });
