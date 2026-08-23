@@ -137,85 +137,7 @@ class SessionStore {
 
 const sessionStore = new SessionStore();
 
-// Helper to create session object with methods
-function createSessionObject(id) {
-  return {
-    id,
-    hostSocketId: null,
-    devices: new Map(),
-    createdAt: Date.now(),
-    expiresAt: Date.now() + SESSION_TIMEOUT,
-    currentTrack: null,
-    isPlaying: false,
-    playbackPosition: 0,
-    playbackStartedAt: null,
-    
-    addDevice(deviceId, socketId, role, nickname, isCameraEnabled, isSpeakerEnabled) {
-      this.devices.set(deviceId, {
-        id: deviceId,
-        socketId,
-        role,
-        nickname,
-        joinedAt: Date.now(),
-        isLive: false,
-        volume: 1,
-        lastPing: Date.now(),
-        isCameraEnabled: isCameraEnabled ?? (role === 'camera' || role === 'device'),
-        isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device')
-      });
-    },
-
-    removeDevice(deviceId) {
-      this.devices.delete(deviceId);
-    },
-
-    getDevicesByRole(role) {
-      return Array.from(this.devices.values()).filter(d => d.role === role);
-    },
-
-    isExpired() {
-      return Date.now() > this.expiresAt;
-    }
-  };
-}
-
-// In-memory fallback for when Redis is not available
-const sessions = new Map();
-
-async function getSession(sessionId) {
-  if (redisReady) {
-    const data = await sessionStore.get(sessionId);
-    if (data) {
-      const session = createSessionObject(data.id);
-      Object.assign(session, data);
-      // Convert devices back to Map
-      session.devices = new Map(Object.entries(data.devices || {}));
-      return session;
-    }
-  }
-  return sessions.get(sessionId) || null;
-}
-
-async function setSession(sessionId, session) {
-  if (redisReady) {
-    await sessionStore.set(sessionId, session);
-  }
-  sessions.set(sessionId, session);
-}
-
-async function deleteSession(sessionId) {
-  if (redisReady) {
-    await sessionStore.delete(sessionId);
-  }
-  sessions.delete(sessionId);
-}
-
-async function hasSession(sessionId) {
-  if (redisReady) {
-    return await sessionStore.has(sessionId);
-  }
-  return sessions.has(sessionId);
-}
+class Session {
   constructor(id) {
     this.id = id;
     this.hostSocketId = null;
@@ -254,6 +176,46 @@ async function hasSession(sessionId) {
   isExpired() {
     return Date.now() > this.expiresAt;
   }
+}
+
+// In-memory fallback for when Redis is not available
+const sessions = new Map();
+
+async function getSession(sessionId) {
+  if (redisReady) {
+    const data = await sessionStore.get(sessionId);
+    if (data) {
+      const session = new Session(data.id);
+      Object.assign(session, data);
+      // Convert devices back to Map
+      session.devices = new Map(Object.entries(data.devices || {}));
+      return session;
+    }
+  }
+  return sessions.get(sessionId) || null;
+}
+
+async function setSession(sessionId, session) {
+  if (redisReady) {
+    // Convert Map to Object for Redis serialization
+    const sessionToSave = { ...session, devices: Object.fromEntries(session.devices) };
+    await sessionStore.set(sessionId, sessionToSave);
+  }
+  sessions.set(sessionId, session);
+}
+
+async function deleteSession(sessionId) {
+  if (redisReady) {
+    await sessionStore.delete(sessionId);
+  }
+  sessions.delete(sessionId);
+}
+
+async function hasSession(sessionId) {
+  if (redisReady) {
+    return await sessionStore.has(sessionId);
+  }
+  return sessions.has(sessionId);
 }
 
 io.on('connection', (socket) => {
