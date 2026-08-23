@@ -821,35 +821,36 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
             </div>
           </div>
 ) : (
-              isCamera && (
-                <div className="device-quick-actions">
-<button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setFullscreenDevice(device);
-                      }}
-                      className="btn btn-primary btn-sm"
-                      title="View camera fullscreen"
-                    >
-                      <Video size={14} />
-                      <span>View Camera</span>
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setMotionDetectionEnabled(prev => !prev);
-                      }}
-                      className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
-                      title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
-                    >
-                      {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
-                      <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
-                    </button>
-                  </div>
-                ) : (
+  isCamera && (
+    <div className="device-quick-actions">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setFullscreenDevice(device);
+        }}
+        className="btn btn-primary btn-sm"
+        title="View camera fullscreen"
+      >
+        <Video size={14} />
+        <span>View Camera</span>
+      </button>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setMotionDetectionEnabled(prev => !prev);
+        }}
+        className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
+        title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+      >
+        {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
+        <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
+      </button>
+    </div>
+  )
+)}
       </article>
     );
-  };
+  });
 
   const renderFullscreenModal = () => {
     if (!fullscreenDevice) return null;
@@ -918,18 +919,6 @@ const cameras = camEntry.cameras || [];
                 >
                   {listening ? <Volume2 size={15} /> : <MicOff size={15} />}
                   <span>{listening ? 'Listening' : 'Listen'}</span>
-                </button>
-
-  <button
-    onClick={(e) => {e.stopPropagation(); setMotionDetectionEnabled(prev => !prev);}}
-    className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
-    title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
-  >
-    {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
-    <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
-  </button>
-                  {motionDetectionEnabled ? <Eye size={15} /> : <BellOff size={15} />}
-                  <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
                 </button>
 
                 {networkStats[fullscreenDevice.id] && (
