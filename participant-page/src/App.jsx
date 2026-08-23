@@ -383,10 +383,10 @@ const startCameraStreaming = async () => {
         throw new Error('Could not access camera. Please check permissions.');
       }
 
-      // Now enumerate devices - labels should be populated after getUserMedia
+// Now enumerate devices - labels should be populated after getUserMedia
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(d => d.kind === 'videoinput');
-      
+
       if (videoDevices.length === 0) {
         setError('No cameras found');
         if (initialStream) initialStream.getTracks().forEach(t => t.stop());
@@ -395,13 +395,17 @@ const startCameraStreaming = async () => {
 
       console.log('Found cameras:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
 
-      // Stop the initial stream since we'll get proper streams for each camera
-      initialStream.getTracks().forEach(t => t.stop());
-
-      // Get stream from each camera
+      // Get stream from each camera with fallbacks
       const cameraStreams = {};
       const combinedStream = new MediaStream();
       let audioTrack = null;
+      let gotVideoFromIndividual = false;
+
+      // Release initial stream - we'll try individual cameras
+      if (initialStream) {
+        initialStream.getTracks().forEach(t => t.stop());
+        initialStream = null;
+      }
 
       for (const device of videoDevices) {
         try {
@@ -413,27 +417,57 @@ const startCameraStreaming = async () => {
             },
             audio: false
           });
-          
+
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
-            // Label the track with device info
             videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
             combinedStream.addTrack(videoTrack);
             cameraStreams[device.deviceId] = stream;
+            gotVideoFromIndividual = true;
           }
         } catch (err) {
           console.warn(`Failed to get stream from camera ${device.deviceId}:`, err);
+          // Try with relaxed constraints
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: device.deviceId } },
+              audio: false
+            });
+            const videoTrack = stream.getVideoTracks()[0];
+            if (videoTrack) {
+              videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
+              combinedStream.addTrack(videoTrack);
+              cameraStreams[device.deviceId] = stream;
+              gotVideoFromIndividual = true;
+            }
+          } catch (err2) {
+            console.warn(`Failed to get stream from camera ${device.deviceId} with relaxed constraints:`, err2);
+          }
+        }
+      }
+
+      // Fallback: if no individual camera worked, try default camera
+      if (!gotVideoFromIndividual) {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
+            audio: false
+          });
+          const videoTrack = stream.getVideoTracks()[0];
+          if (videoTrack) {
+            combinedStream.addTrack(videoTrack);
+            cameraStreams['default'] = stream;
+            gotVideoFromIndividual = true;
+          }
+        } catch (err) {
+          console.warn('Failed to get any camera stream:', err);
         }
       }
 
       // Also get audio track once
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({
-          audio: {
-            echoCancellation: true,
-            noiseSuppression: true,
-            autoGainControl: true
-          },
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           video: false
         });
         audioTrack = audioStream.getAudioTracks()[0];
