@@ -92,6 +92,7 @@ if (process.env.NODE_ENV === 'production') {
   app.use(express.static(hostDashboardPath));
   app.use('/join', express.static(participantPagePath));
   app.use('/p', express.static(participantPagePath));
+  app.use('/assets', express.static(join(hostDashboardPath, 'assets')));
 }
 
 // Redis-backed session store for horizontal scaling
@@ -629,6 +630,17 @@ app.get('/api/sessions/:sessionId', (req, res) => {
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', sessions: sessions.size });
+});
+
+// SPA fallback routes - serve index.html for client-side routing
+app.get('/', (req, res) => {
+  res.sendFile(join(hostDashboardPath, 'index.html'));
+});
+app.get('/join*', (req, res) => {
+  res.sendFile(join(participantPagePath, 'index.html'));
+});
+app.get('/p*', (req, res) => {
+  res.sendFile(join(participantPagePath, 'index.html'));
 });
 
 setInterval(() => {
