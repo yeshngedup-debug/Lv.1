@@ -1596,3 +1596,66 @@ section h3 {
 .stat-item:hover {
   color: var(--text-primary);
 }
+
+/* ============ PTZ CONTROLS ============ */
+.ptz-controls {
+  margin-top: 0.5rem;
+}
+.ptz-controls label {
+  min-width: 40px;
+}
+.ptz-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.ptz-center {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.ptz-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--speed-fast) var(--ease);
+}
+.ptz-btn:hover {
+  background: var(--accent-violet);
+  border-color: var(--accent-violet);
+  color: #fff;
+}
+.ptz-center-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(139, 92, 246, 0.15);
+  border-color: var(--accent-violet);
+  color: var(--accent-violet);
+}
+.ptz-center-btn:hover {
+  background: var(--accent-violet);
+  color: #fff;
+}
+.ptz-zoom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+}
+.zoom-level {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  min-width: 40px;
+  text-align: center;
+}

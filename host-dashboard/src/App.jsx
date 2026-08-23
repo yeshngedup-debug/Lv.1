@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 import io from 'socket.io-client';
 import {
   Radio, Video, Speaker, Music, Mic, MicOff, Copy, Check, Power,
   Maximize2, Trash2, Upload, Play, Pause, RotateCcw, Monitor, Sparkles,
   Volume2, ChevronLeft, ChevronRight, Expand, Users,
-  Activity, Wifi, Gauge, AlertTriangle
+  Activity, Wifi, Gauge, AlertTriangle,
+  Move, ZoomIn, ZoomOut, RotateCw, Bell, Eye, BellOff
 } from 'lucide-react';
 import { PeerConnectionManager } from './webrtc';
 import { GridlineShell } from './components/GridlineShell';
@@ -15,6 +16,102 @@ import './App.css';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm'];
+
+// ============ Memoized Camera Feed Tile (module level: stable identity = real memoization) ============
+const CameraFeedTile = React.memo(function CameraFeedTile({
+  device,
+  registerVideoElement,
+  onClick,
+  onListenToggle,
+  listening,
+  showListenLabel = false,
+  motionAlert,
+  motionEnabled,
+  cameras = [],
+  activeCameraId,
+  onDismissMotion,
+  onCycleCamera
+}) {
+  const camIdx = activeCameraId
+    ? Math.max(0, cameras.findIndex(c => c.id === activeCameraId))
+    : 0;
+  const currentCamLabel = camIdx >= 0 && cameras[camIdx] ? cameras[camIdx].label : 'Default';
+
+  return (
+    <div className="camera-feed-box" onClick={() => onClick(device)}>
+      <video
+        ref={(el) => registerVideoElement(device.id, el, 'grid')}
+        autoPlay
+        playsInline
+        muted
+        className="camera-feed-video"
+        onError={() => console.error(`Video error for ${device.nickname}`)}
+      />
+
+      <div className="tile-top-bar">
+        {cameras.length > 1 && (
+          onCycleCamera ? (
+            <span
+              className="camera-switch-indicator"
+              title="Click to cycle cameras"
+              onClick={(e) => { e.stopPropagation(); onCycleCamera(device, 1); }}
+            >
+              {onDismissMotion !== undefined && <span className="cam-label">{currentCamLabel}</span>}
+              <ChevronRight size={12} style={{ color: 'var(--accent-magenta)' }} />
+            </span>
+          ) : (
+            <span className="tile-cam-count">CAM {camIdx + 1}/{cameras.length}</span>
+          )
+        )}
+        <button
+          onClick={(e) => { e.stopPropagation(); onListenToggle(device.id); }}
+          className={`tile-mic-btn ${listening ? 'on' : ''}`}
+          title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
+        >
+          {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
+        </button>
+        {showListenLabel && listening && (
+          <span className="tile-listen-label">LISTEN</span>
+        )}
+      </div>
+
+      <div className="tile-expand-hint">
+        <Expand size={16} />
+        <span>Zoom</span>
+      </div>
+
+      <div className="camera-feed-bar">
+        <span style={{ fontWeight: 600 }}>{device.nickname}</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {motionAlert && (
+            <div className="motion-alert-badge" onClick={(e) => { e.stopPropagation(); onDismissMotion(device.id); }} title="Click to dismiss">
+              <Bell size={12} />
+              <span>MOTION</span>
+            </div>
+          )}
+          {motionEnabled && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onDismissMotion(device.id); }}
+              className="tile-motion-btn"
+              title="Motion detection enabled"
+            >
+              <Eye size={12} />
+            </button>
+          )}
+          <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
+        </div>
+      </div>
+    </div>
+  );
+}, (prev, next) =>
+  prev.device.id === next.device.id &&
+  prev.listening === next.listening &&
+  prev.showListenLabel === next.showListenLabel &&
+  prev.motionAlert === next.motionAlert &&
+  prev.motionEnabled === next.motionEnabled &&
+  prev.activeCameraId === next.activeCameraId &&
+  prev.cameras.length === next.cameras.length
+);
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -432,7 +529,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const registerVideoElement = (deviceId, element, type = 'preview') => {
+  const registerVideoElement = useCallback((deviceId, element, type = 'preview') => {
     if (element) {
       const key = `${deviceId}-${type}`;
       videoElementsRef.current.set(key, element);
@@ -446,11 +543,9 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
           });
         }
       }
-    } else {
-      // We can't easily unregister without knowing the type, so we'll leave it
-      // The element will be garbage collected when unmounted
     }
-  };
+    // Unregistration is unnecessary: elements are GC'd on unmount
+  }, []);
 
   const [selectedDevice, setSelectedDevice] = useState(null);
   const [fullscreenDevice, setFullscreenDevice] = useState(null);
@@ -458,8 +553,12 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [activePage, setActivePage] = useState('overview');
   const [currentQuality, setCurrentQuality] = useState('high');
   const [networkStats, setNetworkStats] = useState({});
+  const [ptzState, setPtzState] = useState({ pan: 0, tilt: 0, zoom: 1 });
+  const [motionAlerts, setMotionAlerts] = useState({});
+  const [motionDetectionEnabled, setMotionDetectionEnabled] = useState(true);
   const multiCamVideoRefs = useRef({});
   const statsIntervalRef = useRef(null);
+  const motionCanvasRefs = useRef({});
 
   useEffect(() => {
     listeningSetRef.current = listeningDevices;
@@ -479,7 +578,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     });
   }, [listeningDevices, localVolumes]);
 
-  const toggleListen = (deviceId) => {
+  const toggleListen = useCallback((deviceId) => {
     setListeningDevices(prev => {
       const next = new Set(prev);
       if (next.has(deviceId)) {
@@ -489,7 +588,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       }
       return next;
     });
-  };
+  }, []);
 
   const setLocalVolume = (deviceId, volume) => {
     setLocalVolumes(prev => ({ ...prev, [deviceId]: volume }));
@@ -504,14 +603,22 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     }));
   };
 
-  const cycleDeviceCamera = (device, direction) => {
+  const cycleDeviceCamera = useCallback((device, direction) => {
     const entry = deviceCamerasMap[device.id];
     if (!entry || !entry.cameras || entry.cameras.length < 2) return;
     const ids = entry.cameras.map(c => c.id);
     const currentIdx = Math.max(0, ids.indexOf(entry.activeCameraId));
     const nextIdx = (currentIdx + direction + ids.length) % ids.length;
     switchDeviceCamera(device.id, ids[nextIdx]);
-  };
+  }, [deviceCamerasMap]);
+
+  const dismissMotionAlert = useCallback((deviceId) => {
+    setMotionAlerts(prev => {
+      const next = { ...prev };
+      next[deviceId] = false;
+      return next;
+    });
+  }, []);
 
   // ============ Network Stats Collection ============
   const fetchNetworkStats = useCallback(async () => {
@@ -602,10 +709,10 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     );
   }
 
-  const cameraDevices = devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false);
-  const speakerDevices = devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false);
+  const cameraDevices = useMemo(() => devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false), [devices]);
+  const speakerDevices = useMemo(() => devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false), [devices]);
 
-  const DeviceCard = ({ device, isSelected, onClick, onVolumeChange, volume }) => {
+  const DeviceCard = React.memo(({ device, isSelected, onClick, onVolumeChange, volume }) => {
     const isCamera = device.role === 'camera' || (device.role === 'device' && device.isCameraEnabled);
     const isSpeaker = device.role === 'speaker' || (device.role === 'device' && device.isSpeakerEnabled);
     const isCombined = device.role === 'device';
@@ -803,6 +910,15 @@ const cameras = camEntry.cameras || [];
                   <span>{listening ? 'Listening' : 'Listen'}</span>
                 </button>
 
+                <button
+                  onClick={() => setMotionDetectionEnabled(prev => !prev)}
+                  className={`motion-detection-toggle ${motionDetectionEnabled ? 'on' : ''}`}
+                  title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+                >
+                  {motionDetectionEnabled ? <Eye size={15} /> : <BellOff size={15} />}
+                  <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
+                </button>
+
                 {networkStats[fullscreenDevice.id] && (
                   <div className="network-stats-panel">
                     <div className="stat-item">
@@ -824,26 +940,86 @@ const cameras = camEntry.cameras || [];
                   </div>
                 )}
 
-                <div className="control-group">
-                  <label>Quality</label>
-                  <select
-                    value={currentQuality}
-                    onChange={(e) => {
-                      const quality = e.target.value;
-                      setCurrentQuality(quality);
-                      if (socket) {
-                        socket.emit('request-quality', { quality });
-                      }
-                    }}
-                    className="quality-select"
-                  >
-                    <option value="low">Low (640x360 @10fps)</option>
-                    <option value="medium">Medium (1280x720 @20fps)</option>
-                    <option value="high">High (1920x1080 @30fps)</option>
-                  </select>
-                </div>
+<div className="control-group">
+                    <label>Quality</label>
+                    <select
+                      value={currentQuality}
+                      onChange={(e) => {
+                        const quality = e.target.value;
+                        setCurrentQuality(quality);
+                        if (socket) {
+                          socket.emit('request-quality', { quality });
+                        }
+                      }}
+                      className="quality-select"
+                    >
+                      <option value="low">Low (640x360 @10fps)</option>
+                      <option value="medium">Medium (1280x720 @20fps)</option>
+                      <option value="high">High (1920x1080 @30fps)</option>
+                    </select>
+                  </div>
 
-                <div className="control-group">
+                  <div className="control-group ptz-controls">
+                    <label>PTZ</label>
+                    <div className="ptz-buttons">
+                      <button
+                        onClick={() => setPtzState(prev => ({ ...prev, tilt: prev.tilt - 10 }))}
+                        className="ptz-btn"
+                        title="Tilt Up"
+                      >
+                        <Move size={16} style={{ transform: 'rotate(-90deg)' }} />
+                      </button>
+                      <div className="ptz-center">
+                        <button
+                          onClick={() => setPtzState(prev => ({ ...prev, pan: prev.pan - 10 }))}
+                          className="ptz-btn"
+                          title="Pan Left"
+                        >
+                          <Move size={16} style={{ transform: 'rotate(180deg)' }} />
+                        </button>
+                        <button
+                          onClick={() => setPtzState({ pan: 0, tilt: 0, zoom: 1 })}
+                          className="ptz-btn ptz-center-btn"
+                          title="Reset PTZ"
+                        >
+                          <RotateCw size={14} />
+                        </button>
+                        <button
+                          onClick={() => setPtzState(prev => ({ ...prev, pan: prev.pan + 10 }))}
+                          className="ptz-btn"
+                          title="Pan Right"
+                        >
+                          <Move size={16} />
+                        </button>
+                      </div>
+                      <button
+                        onClick={() => setPtzState(prev => ({ ...prev, tilt: prev.tilt + 10 }))}
+                        className="ptz-btn"
+                        title="Tilt Down"
+                      >
+                        <Move size={16} style={{ transform: 'rotate(90deg)' }} />
+                      </button>
+                      <div className="ptz-zoom">
+                        <button
+                          onClick={() => setPtzState(prev => ({ ...prev, zoom: Math.min(prev.zoom + 0.2, 5) }))}
+                          className="ptz-btn"
+                          title="Zoom In"
+                        >
+                          <ZoomIn size={16} />
+                        </button>
+                        <span className="zoom-level">{ptzState.zoom.toFixed(1)}x</span>
+                        <button
+                          onClick={() => setPtzState(prev => ({ ...prev, zoom: Math.max(prev.zoom - 0.2, 0.5) }))}
+                          className="ptz-btn"
+                          title="Zoom Out"
+                        >
+                          <ZoomOut size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="control-group">
                   <label>Vol</label>
                   <input
                     type="range"
@@ -973,37 +1149,22 @@ const cameras = camEntry.cameras || [];
                   <div className="camera-feeds-grid">
                     {cameraDevices.map(device => {
                       const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
-                      const listening = listeningDevices.has(device.id);
-                      const camIdx = camEntry.activeCameraId
-                        ? Math.max(0, camEntry.cameras.findIndex(c => c.id === camEntry.activeCameraId))
-                        : 0;
                       return (
-                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
-                          <video
-                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="camera-feed-video"
-                            onError={() => console.error(`Video error for ${device.nickname}`)}
-                          />
-                          <div className="camera-feed-bar">
-                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
-                                className={`tile-mic-btn ${listening ? 'on' : ''}`}
-                                title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
-                              >
-                                {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
-                              </button>
-                              {listening && <span style={{ color: 'var(--accent-amber)', fontSize: '0.65rem' }}>LISTEN</span>}
-                              <span className="live-indicator-pill">LIVE</span>
-                            </div>
-                          </div>
-                        </div>
+                        <CameraFeedTile
+                          key={device.id}
+                          device={device}
+                          registerVideoElement={registerVideoElement}
+                          onClick={setFullscreenDevice}
+                          onListenToggle={toggleListen}
+                          listening={listeningDevices.has(device.id)}
+                          showListenLabel
+                          motionAlert={!!motionAlerts[device.id]}
+                          motionEnabled={motionDetectionEnabled}
+                          cameras={camEntry.cameras}
+                          activeCameraId={camEntry.activeCameraId}
+                          onDismissMotion={dismissMotionAlert}
+                        />
                       );
-
                     })}
                   </div>
                 </div>
@@ -1157,46 +1318,19 @@ const cameras = camEntry.cameras || [];
                   <div className="camera-feeds-grid">
                     {cameraDevices.map(device => {
                       const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
-                      const listening = listeningDevices.has(device.id);
-                      const cameras = camEntry.cameras || [];
-                      const activeIdx = cameras.findIndex(c => c.id === camEntry.activeCameraId);
-                      const currentCamLabel = activeIdx >= 0 ? cameras[activeIdx]?.label : 'Default';
-
                       return (
-                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
-                          <video
-                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="camera-feed-video"
-                            onError={() => console.error(`Video error for ${device.nickname}`)}
-                          />
-                          <div className="camera-feed-bar">
-                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
-                                className={`tile-mic-btn ${listening ? 'on' : ''}`}
-                                title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
-                              >
-                                {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
-                              </button>
-                              {listening && <span style={{ color: 'var(--accent-amber)', fontSize: '0.65rem' }}>LISTEN</span>}
-                              {cameras.length > 1 && (
-                                <span
-                                  className="camera-switch-indicator"
-                                  title="Click to cycle cameras"
-                                  onClick={(e) => { e.stopPropagation(); cycleDeviceCamera(device, 1); }}
-                                >
-                                  <span className="cam-label">{currentCamLabel}</span>
-                                  <ChevronRight size={12} style={{ color: 'var(--accent-magenta)' }} />
-                                </span>
-                              )}
-                              <span className="live-indicator-pill">LIVE</span>
-                            </div>
-                          </div>
-                        </div>
+                        <CameraFeedTile
+                          key={device.id}
+                          device={device}
+                          registerVideoElement={registerVideoElement}
+                          onClick={setFullscreenDevice}
+                          onListenToggle={toggleListen}
+                          listening={listeningDevices.has(device.id)}
+                          showListenLabel
+                          cameras={camEntry.cameras}
+                          activeCameraId={camEntry.activeCameraId}
+                          onCycleCamera={cycleDeviceCamera}
+                        />
                       );
                     })}
                   </div>
@@ -1300,44 +1434,17 @@ const cameras = camEntry.cameras || [];
                   <div className="camera-feeds-grid">
                     {cameraDevices.map(device => {
                       const camEntry = deviceCamerasMap[device.id] || { cameras: [], activeCameraId: null };
-                      const listening = listeningDevices.has(device.id);
-                      const camIdx = camEntry.activeCameraId
-                        ? Math.max(0, camEntry.cameras.findIndex(c => c.id === camEntry.activeCameraId))
-                        : 0;
                       return (
-                        <div key={device.id} className="camera-feed-box" onClick={() => setFullscreenDevice(device)}>
-                          <video
-                            ref={(el) => registerVideoElement(device.id, el, 'grid')}
-                            autoPlay
-                            playsInline
-                            muted
-                            className="camera-feed-video"
-                            onError={() => console.error(`Video error for ${device.nickname}`)}
-                          />
-
-                          <div className="tile-top-bar">
-                            {camEntry.cameras.length > 1 && (
-                              <span className="tile-cam-count">CAM {camIdx + 1}/{camEntry.cameras.length}</span>
-                            )}
-                            <button
-                              onClick={(e) => { e.stopPropagation(); toggleListen(device.id); }}
-                              className={`tile-mic-btn ${listening ? 'on' : ''}`}
-                              title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
-                            >
-                              {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
-                            </button>
-                          </div>
-
-                          <div className="tile-expand-hint">
-                            <Expand size={16} />
-                            <span>Zoom</span>
-                          </div>
-
-                          <div className="camera-feed-bar">
-                            <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-                            <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
-                          </div>
-                        </div>
+                        <CameraFeedTile
+                          key={device.id}
+                          device={device}
+                          registerVideoElement={registerVideoElement}
+                          onClick={setFullscreenDevice}
+                          onListenToggle={toggleListen}
+                          listening={listeningDevices.has(device.id)}
+                          cameras={camEntry.cameras}
+                          activeCameraId={camEntry.activeCameraId}
+                        />
                       );
                     })}
                   </div>
