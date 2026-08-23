@@ -820,23 +820,34 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               </button>
             </div>
           </div>
-        ) : (
-          isCamera && (
-            <div className="device-quick-actions">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setFullscreenDevice(device);
-                }}
-                className="btn btn-primary btn-sm"
-                title="View camera fullscreen"
-              >
-                <Video size={14} />
-                <span>View Camera</span>
-              </button>
-            </div>
-          )
-        )}
+) : (
+              isCamera && (
+                <div className="device-quick-actions">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFullscreenDevice(device);
+                    }}
+                    className="btn btn-primary btn-sm"
+                    title="View camera fullscreen"
+                  >
+                    <Video size={14} />
+                    <span>View Camera</span>
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setMotionDetectionEnabled(prev => !prev);
+                    }}
+                    className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
+                    title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+                  >
+                    {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
+                    <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
+                  </button>
+                </div>
+              )
+            )}
       </article>
     );
   };

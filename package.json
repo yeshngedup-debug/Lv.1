@@ -15,6 +15,9 @@
     "render-build": "npm install --workspaces && npm run build -w host-dashboard && npm run build -w participant-page"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "autoprefixer": "^10.5.4",
+    "concurrently": "^8.2.2",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.3"
   }
 }
