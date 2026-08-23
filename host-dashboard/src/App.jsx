@@ -4,7 +4,8 @@ import io from 'socket.io-client';
 import {
   Radio, Video, Speaker, Music, Mic, MicOff, Copy, Check, Power,
   Maximize2, Trash2, Upload, Play, Pause, RotateCcw, Monitor, Sparkles,
-  Volume2, ChevronLeft, ChevronRight, Expand, Users
+  Volume2, ChevronLeft, ChevronRight, Expand, Users,
+  Activity, Wifi, Gauge, AlertTriangle
 } from 'lucide-react';
 import { PeerConnectionManager } from './webrtc';
 import { GridlineShell } from './components/GridlineShell';
@@ -456,7 +457,9 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [deviceVolumes, setDeviceVolumes] = useState({});
   const [activePage, setActivePage] = useState('overview');
   const [currentQuality, setCurrentQuality] = useState('high');
+  const [networkStats, setNetworkStats] = useState({});
   const multiCamVideoRefs = useRef({});
+  const statsIntervalRef = useRef(null);
 
   useEffect(() => {
     listeningSetRef.current = listeningDevices;
@@ -509,6 +512,63 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     const nextIdx = (currentIdx + direction + ids.length) % ids.length;
     switchDeviceCamera(device.id, ids[nextIdx]);
   };
+
+  // ============ Network Stats Collection ============
+  const fetchNetworkStats = useCallback(async () => {
+    if (!fullscreenDevice) return;
+    const pc = peerConnectionsRef.current.get(fullscreenDevice.id);
+    if (!pc || !pc.pc) return;
+
+    try {
+      const stats = await pc.pc.getStats();
+      let bitrate = 0;
+      let rtt = 0;
+      let packetsLost = 0;
+      let packetsReceived = 0;
+      let jitter = 0;
+
+      stats.forEach(report => {
+        if (report.type === 'inbound-rtp' && report.kind === 'video') {
+          bitrate = (report.bytesReceived || 0) * 8 / 1000; // kbps
+          packetsLost = report.packetsLost || 0;
+          packetsReceived = report.packetsReceived || 0;
+          jitter = report.jitter || 0;
+        }
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          rtt = (report.currentRoundTripTime || 0) * 1000; // ms
+        }
+      });
+
+      const lossRate = packetsReceived > 0 ? (packetsLost / (packetsReceived + packetsLost)) * 100 : 0;
+
+      setNetworkStats(prev => ({
+        ...prev,
+        [fullscreenDevice.id]: {
+          bitrate: Math.round(bitrate),
+          rtt: Math.round(rtt),
+          lossRate: Number(lossRate.toFixed(2)),
+          jitter: Number((jitter * 1000).toFixed(1)), // ms
+          timestamp: Date.now()
+        }
+      }));
+    } catch (err) {
+      console.warn('Failed to fetch network stats:', err);
+    }
+  }, [fullscreenDevice]);
+
+  // Start/stop stats collection when fullscreen opens/closes
+  useEffect(() => {
+    if (fullscreenDevice) {
+      fetchNetworkStats();
+      statsIntervalRef.current = setInterval(fetchNetworkStats, 2000);
+    }
+    return () => {
+      if (statsIntervalRef.current) {
+        clearInterval(statsIntervalRef.current);
+        statsIntervalRef.current = null;
+      }
+    };
+  }, [fullscreenDevice, fetchNetworkStats]);
 
   const handleDeviceVolumeChange = (deviceId, volume) => {
     setDeviceVolumes(prev => ({ ...prev, [deviceId]: volume }));
@@ -742,6 +802,27 @@ const cameras = camEntry.cameras || [];
                   {listening ? <Volume2 size={15} /> : <MicOff size={15} />}
                   <span>{listening ? 'Listening' : 'Listen'}</span>
                 </button>
+
+                {networkStats[fullscreenDevice.id] && (
+                  <div className="network-stats-panel">
+                    <div className="stat-item">
+                      <Activity size={14} style={{ color: 'var(--accent-cyan)' }} />
+                      <span>{networkStats[fullscreenDevice.id].bitrate} kbps</span>
+                    </div>
+                    <div className="stat-item">
+                      <Gauge size={14} style={{ color: 'var(--accent-green)' }} />
+                      <span>{networkStats[fullscreenDevice.id].rtt} ms</span>
+                    </div>
+                    <div className="stat-item">
+                      <Wifi size={14} style={{ color: networkStats[fullscreenDevice.id].lossRate > 1 ? 'var(--accent-rose)' : 'var(--accent-amber)' }} />
+                      <span>{networkStats[fullscreenDevice.id].lossRate}% loss</span>
+                    </div>
+                    <div className="stat-item">
+                      <AlertTriangle size={14} style={{ color: 'var(--accent-amber)' }} />
+                      <span>{networkStats[fullscreenDevice.id].jitter} ms jitter</span>
+                    </div>
+                  </div>
+                )}
 
                 <div className="control-group">
                   <label>Quality</label>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import {
-  Radio, Speaker, Video, ArrowRight, ArrowLeft, Shield, Check, Music, Power
+  Radio, Speaker, Video, ArrowRight, ArrowLeft, Shield, Check, Music, Power,
+  Circle, Square, Download, Trash2, Clock, AlertCircle
 } from 'lucide-react';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
@@ -37,6 +38,14 @@ function App() {
   // Combined role state - true = device acts as both camera and speaker
   const [isCameraEnabled, setIsCameraEnabled] = useState(true);
   const [isSpeakerEnabled, setIsSpeakerEnabled] = useState(true);
+
+  // Recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [recordedChunks, setRecordedChunks] = useState([]);
+  const mediaRecorderRef = useRef(null);
+  const recordingTimerRef = useRef(null);
+  const dbRef = useRef(null);
 
   const videoRef = useRef(null);
   const audioRef = useRef(null);
@@ -609,6 +618,129 @@ const startCameraStreaming = async () => {
     }
   };
 
+  // ============ IndexedDB for Recordings ============
+  const initDB = useCallback(async () => {
+    if (dbRef.current) return dbRef.current;
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open('IrisSYNCDRecordings', 1);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => {
+        dbRef.current = request.result;
+        resolve(dbRef.current);
+      };
+      request.onupgradeneeded = (event) => {
+        const db = event.target.result;
+        if (!db.objectStoreNames.contains('recordings')) {
+          const store = db.createObjectStore('recordings', { keyPath: 'id', autoIncrement: true });
+          store.createIndex('timestamp', 'timestamp', { unique: false });
+          store.createIndex('sessionId', 'sessionId', { unique: false });
+        }
+      };
+    });
+  }, []);
+
+  const saveRecording = useCallback(async (blob, metadata = {}) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['recordings'], 'readwrite');
+      const store = transaction.objectStore('recordings');
+      const record = {
+        blob,
+        timestamp: Date.now(),
+        sessionId,
+        deviceId: deviceIdRef.current,
+        duration: recordingTime,
+        ...metadata
+      };
+      const request = store.add(record);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }, [sessionId, recordingTime]);
+
+  const getRecordings = useCallback(async () => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['recordings'], 'readonly');
+      const store = transaction.objectStore('recordings');
+      const index = store.index('timestamp');
+      const request = index.getAll();
+      request.onsuccess = () => resolve(request.result.reverse());
+      request.onerror = () => reject(request.error);
+    });
+  }, []);
+
+  const deleteRecording = useCallback(async (id) => {
+    const db = await initDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['recordings'], 'readwrite');
+      const store = transaction.objectStore('recordings');
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  }, []);
+
+  // ============ Recording Controls ============
+  const startRecording = useCallback(async () => {
+    if (!streamRef.current || isRecording) return;
+    
+    try {
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
+        ? 'video/webm;codecs=vp9' 
+        : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
+        ? 'video/webm;codecs=vp8'
+        : 'video/webm';
+      
+      const recorder = new MediaRecorder(streamRef.current, { mimeType, videoBitsPerSecond: 5000000 });
+      mediaRecorderRef.current = recorder;
+      setRecordedChunks([]);
+      setRecordingTime(0);
+      
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          setRecordedChunks(prev => [...prev, e.data]);
+        }
+      };
+      
+      recorder.onstop = async () => {
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        await saveRecording(blob, { mimeType });
+        setRecordedChunks([]);
+      };
+      
+      recorder.start(1000); // Collect data every second
+      setIsRecording(true);
+      
+      // Start timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error('Failed to start recording:', err);
+      setError('Failed to start recording');
+    }
+  }, [isRecording, saveRecording]);
+
+  const stopRecording = useCallback(() => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current = null;
+    }
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    setIsRecording(false);
+  }, [isRecording]);
+
+  const formatTime = (seconds) => {
+    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (seconds % 60).toString().padStart(2, '0');
+    return `${h}:${m}:${s}`;
+  };
+
   useEffect(() => {
     if (!socket || role !== 'camera' || !isJoined) return;
     const handler = ({ cameraId }) => switchToCamera(cameraId);
@@ -841,6 +973,12 @@ const startCameraStreaming = async () => {
                   LIVE
                 </div>
               )}
+              {isRecording && (
+                <div className="recording-indicator">
+                  <Circle className="rec-dot" size={12} />
+                  <span>{formatTime(recordingTime)}</span>
+                </div>
+              )}
             </div>
 
             <div className="camera-controls">
@@ -858,6 +996,28 @@ const startCameraStreaming = async () => {
                   ))}
                 </div>
               )}
+              
+              <div className="recording-controls">
+                {!isRecording ? (
+                  <button
+                    onClick={startRecording}
+                    className="btn btn-record"
+                    disabled={!isLive}
+                  >
+                    <Circle size={16} />
+                    <span>Start Recording</span>
+                  </button>
+                ) : (
+                  <button
+                    onClick={stopRecording}
+                    className="btn btn-stop-record"
+                  >
+                    <Square size={16} />
+                    <span>Stop Recording</span>
+                  </button>
+                )}
+              </div>
+
               <button
                 onClick={stopCameraStreaming}
                 className="btn btn-danger"

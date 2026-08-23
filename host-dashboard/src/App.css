@@ -1572,3 +1572,27 @@ section h3 {
   color: var(--accent-violet-light);
   border-color: rgba(139, 92, 246, 0.3);
 }
+
+/* ============ NETWORK STATS PANEL ============ */
+.network-stats-panel {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  margin-right: 0.5rem;
+}
+.stat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.stat-item:hover {
+  color: var(--text-primary);
+}

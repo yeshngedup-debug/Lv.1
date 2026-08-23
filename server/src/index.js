@@ -1,6 +1,8 @@
 import express from 'express';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
+import { createAdapter } from '@socket.io/redis-adapter';
+import { createClient } from 'redis';
 import cors from 'cors';
 import rateLimit from 'express-rate-limit';
 import { v4 as uuidv4 } from 'uuid';
@@ -8,14 +10,12 @@ import QRCode from 'qrcode';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
+import os from 'os';
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-
-const app = express();
-const server = createServer(app);
 
 const isProduction = process.env.NODE_ENV === 'production';
 const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
@@ -23,6 +23,40 @@ const ALLOWED_ORIGINS = process.env.CORS_ORIGIN
   : isProduction ? [] : ['http://localhost:5173', 'http://localhost:5174'];
 
 const useCredentials = ALLOWED_ORIGINS.length > 0;
+
+// Redis clients for adapter and caching
+let redisClient = null;
+let redisSubClient = null;
+let redisReady = false;
+
+async function initRedis() {
+  if (!process.env.REDIS_URL) {
+    console.log('Redis not configured, running in single-instance mode');
+    return;
+  }
+  
+  try {
+    redisClient = createClient({ url: process.env.REDIS_URL });
+    redisSubClient = redisClient.duplicate();
+    
+    redisClient.on('error', (err) => console.error('Redis Client Error:', err));
+    redisSubClient.on('error', (err) => console.error('Redis Sub Client Error:', err));
+    
+    await Promise.all([redisClient.connect(), redisSubClient.connect()]);
+    redisReady = true;
+    console.log('Redis connected successfully');
+  } catch (err) {
+    console.error('Failed to connect to Redis:', err);
+    redisReady = false;
+  }
+}
+
+const app = express();
+const server = createServer(app);
+
+const PORT = process.env.PORT || 3001;
+const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `http://localhost:${PORT}`;
+const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT) || 3600000; // 1 hour default
 
 const io = new Server(server, {
   cors: {
@@ -35,37 +69,153 @@ const io = new Server(server, {
   maxHttpBufferSize: 1e7
 });
 
+// Initialize Redis adapter for horizontal scaling
+initRedis().then(() => {
+  if (redisReady && redisClient && redisSubClient) {
+    io.adapter(createAdapter(redisClient, redisSubClient));
+    console.log('Socket.IO Redis adapter enabled for horizontal scaling');
+  }
+});
+
 app.use(cors({
   origin: '*',
   methods: ['GET', 'POST']
 }));
 app.use(express.json());
 
-// Rate limiting for session creation
-const createSessionLimiter = rateLimit({
-  windowMs: 60 * 1000, // 1 minute
-  max: 10, // limit each IP to 10 requests per windowMs
-  message: { error: 'Too many session creation requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+// Redis-backed session store for horizontal scaling
+class SessionStore {
+  constructor() {
+    this.localCache = new Map(); // Fallback for when Redis is unavailable
+  }
 
-app.use('/api', createSessionLimiter);
+  async get(sessionId) {
+    if (redisReady && redisClient) {
+      try {
+        const data = await redisClient.get(`session:${sessionId}`);
+        if (data) return JSON.parse(data);
+      } catch (err) {
+        console.warn('Redis get failed, falling back to local cache:', err);
+      }
+    }
+    return this.localCache.get(sessionId) || null;
+  }
 
-const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
-const participantPagePath = join(__dirname, '../../participant-page/dist');
+  async set(sessionId, session) {
+    if (redisReady && redisClient) {
+      try {
+        await redisClient.setEx(`session:${sessionId}`, Math.ceil(SESSION_TIMEOUT / 1000), JSON.stringify(session));
+      } catch (err) {
+        console.warn('Redis set failed:', err);
+      }
+    }
+    this.localCache.set(sessionId, session);
+  }
 
-app.use('/host', express.static(hostDashboardPath));
-app.use('/p', express.static(participantPagePath));
-app.use(express.static(hostDashboardPath));
+  async delete(sessionId) {
+    if (redisReady && redisClient) {
+      try {
+        await redisClient.del(`session:${sessionId}`);
+      } catch (err) {
+        console.warn('Redis delete failed:', err);
+      }
+    }
+    this.localCache.delete(sessionId);
+  }
 
-const PORT = process.env.PORT || 3001;
-const BASE_URL = process.env.RENDER_EXTERNAL_URL || process.env.BASE_URL || `http://localhost:${PORT}`;
-const SESSION_TIMEOUT = parseInt(process.env.SESSION_TIMEOUT) || 3600000; // 1 hour default
+  async has(sessionId) {
+    if (redisReady && redisClient) {
+      try {
+        return await redisClient.exists(`session:${sessionId}`) === 1;
+      } catch (err) {
+        console.warn('Redis exists failed:', err);
+      }
+    }
+    return this.localCache.has(sessionId);
+  }
+}
 
+const sessionStore = new SessionStore();
+
+// Helper to create session object with methods
+function createSessionObject(id) {
+  return {
+    id,
+    hostSocketId: null,
+    devices: new Map(),
+    createdAt: Date.now(),
+    expiresAt: Date.now() + SESSION_TIMEOUT,
+    currentTrack: null,
+    isPlaying: false,
+    playbackPosition: 0,
+    playbackStartedAt: null,
+    
+    addDevice(deviceId, socketId, role, nickname, isCameraEnabled, isSpeakerEnabled) {
+      this.devices.set(deviceId, {
+        id: deviceId,
+        socketId,
+        role,
+        nickname,
+        joinedAt: Date.now(),
+        isLive: false,
+        volume: 1,
+        lastPing: Date.now(),
+        isCameraEnabled: isCameraEnabled ?? (role === 'camera' || role === 'device'),
+        isSpeakerEnabled: isSpeakerEnabled ?? (role === 'speaker' || role === 'device')
+      });
+    },
+
+    removeDevice(deviceId) {
+      this.devices.delete(deviceId);
+    },
+
+    getDevicesByRole(role) {
+      return Array.from(this.devices.values()).filter(d => d.role === role);
+    },
+
+    isExpired() {
+      return Date.now() > this.expiresAt;
+    }
+  };
+}
+
+// In-memory fallback for when Redis is not available
 const sessions = new Map();
 
-class Session {
+async function getSession(sessionId) {
+  if (redisReady) {
+    const data = await sessionStore.get(sessionId);
+    if (data) {
+      const session = createSessionObject(data.id);
+      Object.assign(session, data);
+      // Convert devices back to Map
+      session.devices = new Map(Object.entries(data.devices || {}));
+      return session;
+    }
+  }
+  return sessions.get(sessionId) || null;
+}
+
+async function setSession(sessionId, session) {
+  if (redisReady) {
+    await sessionStore.set(sessionId, session);
+  }
+  sessions.set(sessionId, session);
+}
+
+async function deleteSession(sessionId) {
+  if (redisReady) {
+    await sessionStore.delete(sessionId);
+  }
+  sessions.delete(sessionId);
+}
+
+async function hasSession(sessionId) {
+  if (redisReady) {
+    return await sessionStore.has(sessionId);
+  }
+  return sessions.has(sessionId);
+}
   constructor(id) {
     this.id = id;
     this.hostSocketId = null;
