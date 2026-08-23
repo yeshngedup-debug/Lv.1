@@ -16,8 +16,8 @@ export default defineConfig({
         background_color: '#242424',
         display: 'standalone',
         orientation: 'portrait',
-        scope: '/p/',
-        start_url: '/p/',
+        scope: '/',
+        start_url: '/',
         icons: [
           {
             src: 'pwa-192x192.png',
@@ -55,7 +55,7 @@ export default defineConfig({
       }
     })
   ],
-  base: '/p/',
+  base: '/',
   server: {
     port: 5174,
     proxy: {

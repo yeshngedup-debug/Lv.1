@@ -1,10 +1,10 @@
 services:
   - type: web
-    name: iris-syncd
+    name: iris-syncd-server
     env: node
     plan: free
-    buildCommand: npm install --workspaces && npm run build -w host-dashboard && npm run build -w participant-page
-    startCommand: npm start
+    buildCommand: npm install --workspaces
+    startCommand: node server/src/index.js
     envVars:
       - key: NODE_ENV
         value: production
@@ -12,3 +12,25 @@ services:
         value: '*'
       - key: SESSION_TIMEOUT
         value: '3600000'
+      - key: REDIS_URL
+        sync: false
+
+  - type: web
+    name: iris-syncd-host
+    env: static
+    plan: free
+    buildCommand: npm install --workspaces && npm run build -w host-dashboard
+    staticPublishPath: host-dashboard/dist
+    envVars:
+      - key: VITE_SOCKET_URL
+        value: https://iris-syncd-server.onrender.com
+
+  - type: web
+    name: iris-syncd-participant
+    env: static
+    plan: free
+    buildCommand: npm install --workspaces && npm run build -w participant-page
+    staticPublishPath: participant-page/dist
+    envVars:
+      - key: VITE_SOCKET_URL
+        value: https://iris-syncd-server.onrender.com
