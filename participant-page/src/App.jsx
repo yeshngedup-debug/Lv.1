@@ -247,111 +247,24 @@ const requestMediaPermission = async (requestedRole) => {
         return true;
       } else if (requestedRole === 'camera') {
         console.log('Requesting camera/microphone permissions...');
-        
-        // Try multiple constraint configurations for better device compatibility
-        const constraintsList = [
-          // Try high-res environment camera first (mobile rear)
-          {
-            video: {
-              facingMode: { ideal: 'environment' },
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 }
-            },
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          },
-          // Try user-facing camera (mobile front / desktop)
-          {
-            video: {
-              facingMode: { ideal: 'user' },
-              width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 }
-            },
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          },
-          // Fallback: any available camera
-          {
-            video: {
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            },
-            audio: {
-              echoCancellation: true,
-              noiseSuppression: true,
-              autoGainControl: true
-            }
-          },
-          // Last resort: just audio + any video
-          {
+
+        // Just get a basic stream to trigger permission prompt, then stop it
+        // We'll get all cameras properly in startCameraStreaming after permission is granted
+        try {
+          const testStream = await navigator.mediaDevices.getUserMedia({
             video: true,
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
               autoGainControl: true
             }
-          }
-        ];
-
-        let stream = null;
-        let lastError = null;
-
-        for (const constraints of constraintsList) {
-          try {
-            console.log('Trying media constraints:', JSON.stringify(constraints));
-            stream = await navigator.mediaDevices.getUserMedia(constraints);
-            console.log('Successfully got media stream with constraints:', constraints);
-            break;
-          } catch (err) {
-            console.warn('Media constraint failed, trying next:', err.name, err.message);
-            lastError = err;
-            continue;
-          }
+          });
+          testStream.getTracks().forEach(t => t.stop());
+        } catch (err) {
+          console.warn('Initial permission check failed:', err);
+          throw err;
         }
 
-        if (!stream) {
-          throw lastError || new Error('No compatible media device found');
-        }
-
-        console.log('Got user media stream:', stream.id, 'tracks:', stream.getTracks().map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled, readyState: t.readyState, muted: t.muted })));
-        const videoTracks = stream.getVideoTracks();
-        if (videoTracks.length === 0) {
-          console.error('NO VIDEO TRACKS IN STREAM!');
-        } else {
-          console.log('Video track settings:', videoTracks[0].getSettings());
-          console.log('Video track constraints:', videoTracks[0].getConstraints());
-        }
-        streamRef.current = stream;
-
-        // Enumerate all cameras now that permission is granted (labels become readable)
-        try {
-          const allDevices = await navigator.mediaDevices.enumerateDevices();
-          const cams = allDevices
-            .filter(d => d.kind === 'videoinput')
-            .map(d => ({ id: d.deviceId, label: d.label || 'Camera' }))
-            .filter(c => c.id);
-          setAvailableCameras(cams);
-          const activeTrack = stream.getVideoTracks()[0];
-          if (activeTrack) {
-            const settings = activeTrack.getSettings();
-            const matched = cams.find(c => c.id === settings.deviceId);
-            setActiveCameraId(matched ? matched.id : (cams[0]?.id || null));
-          }
-          console.log('Available cameras:', cams.length);
-        } catch (enumErr) {
-          console.warn('Could not enumerate cameras:', enumErr);
-        }
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          videoRef.current.play().catch(err => console.error('Local preview play failed:', err));
-        }
         setMediaPermission('granted');
         return true;
       }
@@ -360,7 +273,7 @@ const requestMediaPermission = async (requestedRole) => {
       setMediaPermission('denied');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Media permission denied. Please allow access in browser settings and try again.');
+        setError('Camera/microphone permission denied. Please allow access in browser settings and try again.');
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setError('No camera/microphone found. Please connect a device and try again.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
@@ -398,7 +311,7 @@ const requestMediaPermission = async (requestedRole) => {
 
   const answerHandlerRef = useRef(null);
 
-  const startCameraStreaming = async () => {
+const startCameraStreaming = async () => {
     if (!socket) return;
 
     const currentDeviceId = deviceIdRef.current;
@@ -424,17 +337,38 @@ const requestMediaPermission = async (requestedRole) => {
     setAllCameraStreams({});
 
     try {
-      // Enumerate all cameras first
+      console.log('Starting camera streaming...');
+
+      // First, get a basic stream to ensure permission is granted and enumerate devices with labels
+      let initialStream = null;
+      try {
+        initialStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280, max: 1920 },
+            height: { ideal: 720, max: 1080 }
+          },
+          audio: false
+        });
+      } catch (err) {
+        console.error('Failed to get initial camera stream:', err);
+        throw new Error('Could not access camera. Please check permissions.');
+      }
+
+      // Now enumerate devices - labels should be populated after getUserMedia
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(d => d.kind === 'videoinput');
       
       if (videoDevices.length === 0) {
         setError('No cameras found');
+        if (initialStream) initialStream.getTracks().forEach(t => t.stop());
         return;
       }
 
       console.log('Found cameras:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
-      
+
+      // Stop the initial stream since we'll get proper streams for each camera
+      initialStream.getTracks().forEach(t => t.stop());
+
       // Get stream from each camera
       const cameraStreams = {};
       const combinedStream = new MediaStream();
@@ -490,12 +424,12 @@ const requestMediaPermission = async (requestedRole) => {
       streamRef.current = combinedStream;
 
       // Update available cameras list
-      const camList = videoDevices.map(d => ({ 
-        id: d.deviceId, 
-        label: d.label || `Camera ${d.deviceId.slice(0, 8)}` 
+      const camList = videoDevices.map(d => ({
+        id: d.deviceId,
+        label: d.label || `Camera ${d.deviceId.slice(0, 8)}`
       }));
       setAvailableCameras(camList);
-      
+
       const firstCamId = camList[0]?.id;
       if (firstCamId) {
         setActiveCameraId(firstCamId);
