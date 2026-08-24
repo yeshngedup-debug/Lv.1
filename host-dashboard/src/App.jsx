@@ -576,6 +576,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   }, []);
 
   const [selectedDevice, setSelectedDevice] = useState(null);
+  const [copiedInvite, setCopiedInvite] = useState(false);
   const [fullscreenDevice, setFullscreenDevice] = useState(null);
   const [deviceVolumes, setDeviceVolumes] = useState({});
   const [activePage, setActivePage] = useState('overview');
@@ -725,15 +726,35 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       >
         <div className="create-session-container">
           <div className="landing-icon-wrapper">
-            <Radio size={32} />
+            <Radio size={28} />
           </div>
-          <h2>Create a New Session</h2>
-          <p>Initialize a high-performance audio & camera sync hub for connected devices</p>
+          <h2>Run your room from one screen</h2>
+          <p>
+            Sync music across every phone in the room, pull up live camera
+            feeds, and talk to the whole fleet — from a single dashboard.
+          </p>
           {error && <div className="error-message">{error}</div>}
-          <button onClick={createSession} className="gridline-btn-primary" disabled={reconnecting} style={{ padding: '0.85rem 2.2rem', fontSize: '1.05rem', borderRadius: '12px' }}>
+          <button onClick={createSession} className="gridline-btn-primary" disabled={reconnecting}>
             <Sparkles size={18} />
-            <span>{reconnecting ? 'Connecting...' : 'Launch Gridline Hub'}</span>
+            <span>{reconnecting ? 'Connecting…' : 'Start a Session'}</span>
           </button>
+          <div className="landing-features">
+            <div className="landing-feature">
+              <Speaker size={18} />
+              <h4>Synced audio</h4>
+              <p>Every device plays the same track, drift-corrected in real time.</p>
+            </div>
+            <div className="landing-feature">
+              <Video size={18} />
+              <h4>Live cameras</h4>
+              <p>Phones become multi-cam feeds you can switch and monitor.</p>
+            </div>
+            <div className="landing-feature">
+              <Mic size={18} />
+              <h4>Push-to-talk</h4>
+              <p>Hold a button and your voice reaches every connected device.</p>
+            </div>
+          </div>
         </div>
       </GridlineShell>
     );
@@ -984,36 +1005,58 @@ const cameras = camEntry.cameras || [];
               </div>
             </div>
 
-            {/* Invite & QR Panel */}
-            <div className="col-span-4">
+            {/* Invite & Getting-started row */}
+            <div className="col-span-8">
               <div className="gridline-card">
                 <div className="card-header">
                   <div className="card-title-group">
                     <Radio size={18} className="card-title-icon" />
                     <h3 className="card-title">Invite Participants</h3>
                   </div>
-                  <span className="card-badge">QR ACCESS</span>
+                  <span className="card-badge">{sessionId}</span>
                 </div>
 
-                <div className="qr-flex-wrapper">
+                <div className="qr-flex-wrapper" style={{ padding: '1.25rem' }}>
                   <div className="qr-box">
-                    <QRCodeSVG value={joinUrl} size={150} />
+                    <QRCodeSVG value={joinUrl} size={152} level="M" />
                   </div>
                   <div className="invite-info-col">
                     <div className="url-input-group">
-                      <input type="text" value={joinUrl} readOnly />
+                      <input type="text" value={joinUrl} readOnly aria-label="Invite link" />
                       <button
-                        onClick={() => navigator.clipboard.writeText(joinUrl)}
+                        onClick={() => {
+                          navigator.clipboard.writeText(joinUrl);
+                          setCopiedInvite(true);
+                          setTimeout(() => setCopiedInvite(false), 2000);
+                        }}
                         className="gridline-btn-ghost btn-sm"
+                        aria-label={copiedInvite ? 'Invite link copied' : 'Copy invite link'}
                       >
-                        <Copy size={14} />
+                        {copiedInvite ? <Check size={14} className="text-green" /> : <Copy size={14} />}
+                        <span>{copiedInvite ? 'Copied' : 'Copy'}</span>
                       </button>
                     </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                      Scan QR code or copy session URL to connect speakers & cameras.
+                    <p className="invite-hint">
+                      Guests scan the QR code or open the link — no app install needed.
                     </p>
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <div className="col-span-4">
+              <div className="gridline-card">
+                <div className="card-header">
+                  <div className="card-title-group">
+                    <Sparkles size={18} className="card-title-icon" />
+                    <h3 className="card-title">Getting started</h3>
+                  </div>
+                </div>
+                <ol className="guide-steps">
+                  <li>Share the code or QR — guests join as speakers, cameras, or both.</li>
+                  <li>Upload a track under Audio Broadcast and press play for the room.</li>
+                  <li>Watch live feeds appear in the CCTV Grid as cameras come online.</li>
+                </ol>
               </div>
             </div>
 
@@ -1156,25 +1199,31 @@ const cameras = camEntry.cameras || [];
                     <Radio size={18} className="card-title-icon" />
                     <h3 className="card-title">Invite Participants</h3>
                   </div>
-                  <span className="card-badge">QR ACCESS</span>
+                  <span className="card-badge">{sessionId}</span>
                 </div>
 
-                <div className="qr-flex-wrapper">
+                <div className="qr-flex-wrapper" style={{ padding: '1.25rem' }}>
                   <div className="qr-box">
-                    <QRCodeSVG value={joinUrl} size={150} />
+                    <QRCodeSVG value={joinUrl} size={152} level="M" />
                   </div>
                   <div className="invite-info-col">
                     <div className="url-input-group">
-                      <input type="text" value={joinUrl} readOnly />
+                      <input type="text" value={joinUrl} readOnly aria-label="Invite link" />
                       <button
-                        onClick={() => navigator.clipboard.writeText(joinUrl)}
+                        onClick={() => {
+                          navigator.clipboard.writeText(joinUrl);
+                          setCopiedInvite(true);
+                          setTimeout(() => setCopiedInvite(false), 2000);
+                        }}
                         className="gridline-btn-ghost btn-sm"
+                        aria-label={copiedInvite ? 'Invite link copied' : 'Copy invite link'}
                       >
-                        <Copy size={14} />
+                        {copiedInvite ? <Check size={14} className="text-green" /> : <Copy size={14} />}
+                        <span>{copiedInvite ? 'Copied' : 'Copy'}</span>
                       </button>
                     </div>
-                    <p style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                      Scan QR code or copy session URL to connect speakers & cameras.
+                    <p className="invite-hint">
+                      Guests scan the QR code or open the link — no app install needed.
                     </p>
                   </div>
                 </div>

@@ -12,8 +12,7 @@ import {
   Check,
   Power,
   ChevronLeft,
-  ChevronRight,
-  Zap
+  ChevronRight
 } from 'lucide-react';
 
 export function GridlineShell({
@@ -61,17 +60,13 @@ export function GridlineShell({
             {currentStatus.label}
           </span>
           <span className="status-divider" aria-hidden="true">/</span>
-          <span className="status-text">SIGNALING: WEBSOCKET</span>
-          <span className="status-divider" aria-hidden="true">/</span>
-          <span className="status-text">MEDIA: WEBRTC P2P</span>
+          <span className="status-text">
+            {devicesCount} DEVICE{devicesCount === 1 ? '' : 'S'} CONNECTED
+          </span>
         </div>
         <div className="status-strip-right">
-          <span className="status-metric" title="Devices currently connected">
-            <Activity size={12} aria-hidden="true" /> {devicesCount} DEVICE{devicesCount === 1 ? '' : 'S'}
-          </span>
-          <span className="status-divider" aria-hidden="true">/</span>
           <span className="status-metric" title="WebRTC encrypts all media end-to-end">
-            <ShieldCheck size={12} aria-hidden="true" /> E2E ENCRYPTED
+            <ShieldCheck size={12} aria-hidden="true" /> ENCRYPTED
           </span>
         </div>
       </div>
@@ -84,7 +79,6 @@ export function GridlineShell({
           </div>
           <div className="brand-titles">
             <h1 className="brand-name">Iris SYNCD</h1>
-            <span className="brand-badge">GRIDLINE CONTROL</span>
           </div>
         </div>
 
@@ -109,17 +103,6 @@ export function GridlineShell({
         )}
 
         <div className="header-actions">
-          <span
-            className={`connection-pill ${currentStatus.className}`}
-            role="status"
-            aria-live="polite"
-          >
-            <span className="pill-dot" aria-hidden="true" />
-            <span className="pill-label">
-              {reconnecting ? 'Reconnecting' : currentStatus.label}
-            </span>
-          </span>
-
           {sessionId && (
             <button
               onClick={onEndSession}
@@ -186,18 +169,6 @@ export function GridlineShell({
                 {!sidebarCollapsed && <span>Device Fleet ({devicesCount})</span>}
               </button>
             </nav>
-
-            {!sidebarCollapsed && (
-              <div className="sidebar-footer-card">
-                <div className="footer-card-header">
-                  <Zap size={14} className="text-violet" aria-hidden="true" />
-                  <span>SYNCD HUB v2.0</span>
-                </div>
-                <p className="footer-card-desc">
-                  Multi-device sync & camera streaming active.
-                </p>
-              </div>
-            )}
           </aside>
         )}
 
