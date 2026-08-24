@@ -1,9 +1,0 @@
-- generic [ref=e3]:
-  - banner [ref=e4]:
-    - heading "Iris SYNCD" [level=1] [ref=e5]
-    - paragraph [ref=e12]: Host Dashboard
-  - main [ref=e13]:
-    - generic [ref=e14]:
-      - heading "Create a New Session" [level=2] [ref=e15]
-      - paragraph [ref=e16]: Start a party session and invite others to join
-      - button "Create Session" [ref=e17] [cursor=pointer]
