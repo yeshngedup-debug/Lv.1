@@ -56,6 +56,15 @@ export class PeerConnectionManager {
       }
     };
 
+    // Handle incoming ICE candidates from remote peer
+    this._iceCandidateHandler = async ({ candidate, fromDeviceId }) => {
+      // Only handle candidates for this peer connection
+      if (fromDeviceId === this.targetDeviceId) {
+        await this.addIceCandidate(candidate);
+      }
+    };
+    this.socket.on('ice-candidate', this._iceCandidateHandler);
+
     this.pc.ontrack = (event) => {
       console.log('Host received track:', event.track.kind, event.streams.length);
       this.remoteStream = event.streams[0];
@@ -128,7 +137,36 @@ export class PeerConnectionManager {
     return this.pc.localDescription;
   }
 
+  // For API consistency with participant-page PeerConnectionManager
+  async createOffer() {
+    const offer = await this.pc.createOffer();
+    await this.pc.setLocalDescription(offer);
+    console.log('Host created offer, localDescription:', this.pc.localDescription?.type);
+    return this.pc.localDescription;
+  }
+
+  // For API consistency with participant-page PeerConnectionManager
+  async handleAnswer(answer) {
+    console.log('Host setting remote answer');
+    await this.pc.setRemoteDescription(new RTCSessionDescription(answer));
+    await this.drainIceQueue();
+  }
+
+  // For API consistency with participant-page PeerConnectionManager
+  async addLocalStream(stream) {
+    this.localStream = stream;
+    console.log('Host adding local stream tracks:', stream.getTracks().length);
+    stream.getTracks().forEach(track => {
+      console.log('Host adding track:', track.kind);
+      this.pc.addTrack(track, stream);
+    });
+  }
+
   close() {
+    if (this._iceCandidateHandler) {
+      this.socket.off('ice-candidate', this._iceCandidateHandler);
+      this._iceCandidateHandler = null;
+    }
     if (this.pc) {
       this.pc.close();
       this.pc = null;

@@ -383,7 +383,7 @@ const startCameraStreaming = async () => {
         throw new Error('Could not access camera. Please check permissions.');
       }
 
-// Now enumerate devices - labels should be populated after getUserMedia
+      // Now enumerate devices - labels should be populated after getUserMedia
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(d => d.kind === 'videoinput');
 
@@ -504,7 +504,7 @@ const startCameraStreaming = async () => {
         videoRef.current.play().catch(() => {});
       }
 
-      // Create peer connection and add all tracks
+      // Use PeerConnectionManager for WebRTC (fixes CR-02)
       const pc = new PeerConnectionManager(socket, 'host', true);
       await pc.addLocalStream(combinedStream);
 
