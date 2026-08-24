@@ -11,107 +11,13 @@ import {
 import { PeerConnectionManager } from './webrtc';
 import { GridlineShell } from './components/GridlineShell';
 import { Equalizer } from './components/Equalizer';
+import { CameraFeedTile } from './components/camera/CameraFeedTile';
+import { DeviceCard } from './components/device/DeviceCard';
 import './App.css';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm'];
-
-// ============ Memoized Camera Feed Tile (module level: stable identity = real memoization) ============
-const CameraFeedTile = React.memo(function CameraFeedTile({
-  device,
-  registerVideoElement,
-  onClick,
-  onListenToggle,
-  listening,
-  showListenLabel = false,
-  motionAlert,
-  motionEnabled,
-  cameras = [],
-  activeCameraId,
-  onDismissMotion,
-  onCycleCamera
-}) {
-  const camIdx = activeCameraId
-    ? Math.max(0, cameras.findIndex(c => c.id === activeCameraId))
-    : 0;
-  const currentCamLabel = camIdx >= 0 && cameras[camIdx] ? cameras[camIdx].label : 'Default';
-
-  return (
-    <div className="camera-feed-box" onClick={() => onClick(device)}>
-      <video
-        ref={(el) => registerVideoElement(device.id, el, 'grid')}
-        autoPlay
-        playsInline
-        muted
-        className="camera-feed-video"
-        onError={() => console.error(`Video error for ${device.nickname}`)}
-      />
-
-      <div className="tile-top-bar">
-        {cameras.length > 1 && (
-          onCycleCamera ? (
-            <span
-              className="camera-switch-indicator"
-              title="Click to cycle cameras"
-              onClick={(e) => { e.stopPropagation(); onCycleCamera(device, 1); }}
-            >
-              {onDismissMotion !== undefined && <span className="cam-label">{currentCamLabel}</span>}
-              <ChevronRight size={12} style={{ color: 'var(--accent-magenta)' }} />
-            </span>
-          ) : (
-            <span className="tile-cam-count">CAM {camIdx + 1}/{cameras.length}</span>
-          )
-        )}
-        <button
-          onClick={(e) => { e.stopPropagation(); onListenToggle(device.id); }}
-          className={`tile-mic-btn ${listening ? 'on' : ''}`}
-          title={listening ? 'Mute device microphone' : 'Listen to device microphone'}
-        >
-          {listening ? <Volume2 size={14} /> : <MicOff size={14} />}
-        </button>
-        {showListenLabel && listening && (
-          <span className="tile-listen-label">LISTEN</span>
-        )}
-      </div>
-
-      <div className="tile-expand-hint">
-        <Expand size={16} />
-        <span>Zoom</span>
-      </div>
-
-      <div className="camera-feed-bar">
-        <span style={{ fontWeight: 600 }}>{device.nickname}</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {motionAlert && (
-            <div className="motion-alert-badge" onClick={(e) => { e.stopPropagation(); onDismissMotion(device.id); }} title="Click to dismiss">
-              <Bell size={12} />
-              <span>MOTION</span>
-            </div>
-          )}
-          {motionEnabled && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onDismissMotion(device.id); }}
-              className="tile-motion-btn"
-              title="Motion detection enabled"
-            >
-              <Eye size={12} />
-            </button>
-          )}
-          <span className="live-indicator-pill"><span className="live-dot-pulse" />LIVE</span>
-        </div>
-      </div>
-    </div>
-  );
-}, (prev, next) =>
-  prev.device.id === next.device.id &&
-  prev.listening === next.listening &&
-  prev.showListenLabel === next.showListenLabel &&
-  prev.motionAlert === next.motionAlert &&
-  prev.motionEnabled === next.motionEnabled &&
-  prev.activeCameraId === next.activeCameraId &&
-  prev.cameras.length === next.cameras.length
-);
 
 function App() {
   const [socket, setSocket] = useState(null);
@@ -712,145 +618,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     );
   }
 
-  const DeviceCard = React.memo(({ device, isSelected, onClick, onVolumeChange, volume }) => {
-    const isCamera = device.role === 'camera' || (device.role === 'device' && device.isCameraEnabled);
-    const isSpeaker = device.role === 'speaker' || (device.role === 'device' && device.isSpeakerEnabled);
-    const isCombined = device.role === 'device';
-    const pc = peerConnectionsRef.current.get(device.id);
-    const isConnected = pc?.connectionState === 'connected';
-
-    return (
-      <article
-        className={`device-card ${isSelected ? 'selected' : ''} ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}
-        onClick={onClick}
-        data-device-id={device.id}
-      >
-        <div className="device-card-header">
-          <div className="device-avatar">
-            {isCombined ? (
-              <span className="combined-avatar">
-                <Video size={16} />
-                <Speaker size={12} />
-              </span>
-            ) : isCamera ? (
-              <Video size={18} />
-            ) : (
-              <Speaker size={18} />
-            )}
-          </div>
-          <div className="device-meta">
-            <h3 className="device-name">{device.nickname}</h3>
-            <div className="device-status">
-              <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}></span>
-              <span className={`device-role-badge ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}>
-                {isCombined ? 'Device' : (isCamera ? 'Camera' : 'Speaker')}
-              </span>
-            </div>
-          </div>
-        </div>
-
-{isSelected && isCamera && (
-          <div className="device-preview">
-            <video
-              ref={(el) => registerVideoElement(device.id, el, 'preview')}
-              autoPlay
-              playsInline
-              muted
-              className="preview-video"
-            />
-            <div className="preview-overlay">
-              <span className="live-dot"></span>
-              LIVE
-            </div>
-          </div>
-        )}
-
-        {isSelected ? (
-          <div className="device-controls">
-            {isCamera && (
-              <div className="control-group">
-                <label>Volume</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={volume ?? 1}
-                  onChange={(e) => onVolumeChange(device.id, parseFloat(e.target.value))}
-                  className="volume-slider"
-                />
-                <span className="volume-value">{Math.round((volume ?? 1) * 100)}%</span>
-              </div>
-            )}
-            {isSpeaker && (
-              <div className="control-group">
-                <label>Volume</label>
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={volume ?? 1}
-                  onChange={(e) => onVolumeChange(device.id, parseFloat(e.target.value))}
-                  className="volume-slider"
-                />
-                <span className="volume-value">{Math.round((volume ?? 1) * 100)}%</span>
-              </div>
-            )}
-            <div className="device-actions">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isCamera) setFullscreenDevice(device);
-                }}
-                className="btn btn-secondary btn-sm"
-                disabled={!isCamera}
-              >
-                <Maximize2 size={14} />
-                Fullscreen
-              </button>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  removeDevice(device.id);
-                }}
-                className="btn btn-danger btn-sm"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-) : (
-  isCamera && (
-    <div className="device-quick-actions">
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setFullscreenDevice(device);
-        }}
-        className="btn btn-primary btn-sm"
-        title="View camera fullscreen"
-      >
-        <Video size={14} />
-        <span>View Camera</span>
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setMotionDetectionEnabled(prev => !prev);
-        }}
-        className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
-        title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
-      >
-        {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
-        <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>
-      </button>
-    </div>
-  )
-)}
-      </article>
-    );
-  });
+  
 
   const renderFullscreenModal = () => {
     if (!fullscreenDevice) return null;
@@ -1415,6 +1183,12 @@ const cameras = camEntry.cameras || [];
                         onClick={() => setSelectedDevice(selectedDevice?.id === device.id ? null : device)}
                         onVolumeChange={handleDeviceVolumeChange}
                         volume={deviceVolumes[device.id]}
+                        registerVideoElement={registerVideoElement}
+                        setFullscreenDevice={setFullscreenDevice}
+                        removeDevice={removeDevice}
+                        motionDetectionEnabled={motionDetectionEnabled}
+                        setMotionDetectionEnabled={setMotionDetectionEnabled}
+                        peerConnectionsRef={peerConnectionsRef}
                       />
                     ))}
                   </div>
