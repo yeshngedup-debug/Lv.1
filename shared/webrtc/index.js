@@ -45,6 +45,9 @@ export class PeerConnectionManager {
     this.remoteStream = null;
     this.onRemoteStream = options.onRemoteStream || null;
     this.onConnectionStateChange = options.onConnectionStateChange || null;
+    // Namespaced ICE channel lets multiple parallel PCs to the same peer
+    // (e.g. camera + push-to-talk) route candidates without cross-talk
+    this._iceEventName = options.iceEventName || 'ice-candidate';
     this.iceQueue = [];
     this._iceCandidateHandler = null;
     this._closed = false;
@@ -57,7 +60,7 @@ export class PeerConnectionManager {
 
     this.pc.onicecandidate = (event) => {
       if (event.candidate && !this._closed) {
-        this.socket.emit('ice-candidate', {
+        this.socket.emit(this._iceEventName, {
           targetDeviceId: this.targetDeviceId,
           candidate: event.candidate
         });
@@ -69,7 +72,7 @@ export class PeerConnectionManager {
         await this.addIceCandidate(candidate);
       }
     };
-    this.socket.on('ice-candidate', this._iceCandidateHandler);
+    this.socket.on(this._iceEventName, this._iceCandidateHandler);
 
     this.pc.ontrack = (event) => {
       this.remoteStream = event.streams[0];
@@ -94,6 +97,11 @@ export class PeerConnectionManager {
         this.pc.restartIce();
       }
     };
+  }
+
+  // Expose live connection state so UI status indicators reflect reality
+  get connectionState() {
+    return this.pc ? this.pc.connectionState : 'closed';
   }
 
   async addIceCandidate(candidate) {
@@ -147,6 +155,17 @@ export class PeerConnectionManager {
     }
   }
 
+  // FIXED: host and participant call these methods but they never existed,
+  // so every offer/answer exchange threw TypeError and WebRTC never connected
+  async handleOffer(offer) {
+    await this.setRemoteDescription(offer);
+    return this.createAnswer();
+  }
+
+  async handleAnswer(answer) {
+    await this.setRemoteDescription(answer);
+  }
+
   async setRemoteDescription(description) {
     if (!this.pc || this._closed) return;
     try {
@@ -168,7 +187,7 @@ export class PeerConnectionManager {
   close() {
     this._closed = true;
     if (this._iceCandidateHandler) {
-      this.socket.off('ice-candidate', this._iceCandidateHandler);
+      this.socket.off(this._iceEventName, this._iceCandidateHandler);
     }
     if (this.pc) {
       this.pc.close();

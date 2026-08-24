@@ -6,3 +6,7 @@ dist/
 Thumbs.db
 .playwright-mcp/
 *.png
+uploads/
+.planning/
+plans/
+previews/

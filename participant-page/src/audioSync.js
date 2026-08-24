@@ -1,7 +1,10 @@
 export class AudioSync {
-  constructor(audioElement, socket) {
+  constructor(audioElement, socket, options = {}) {
     this.audio = audioElement;
     this.socket = socket;
+    // Estimated (server - client) clock offset in ms, measured via clock-sync.
+    // Without it, serverTimestamp math drifts by the full skew between devices.
+    this.clockOffsetMs = Number.isFinite(options.clockOffsetMs) ? options.clockOffsetMs : 0;
     this.audioContext = null;
     this.gainNode = null;
     this.isSyncing = false;
@@ -37,17 +40,29 @@ export class AudioSync {
     this.socket.on('playback-seeked', (data) => this.handlePlaybackSeeked(data));
   }
 
+  setClockOffset(ms) {
+    this.clockOffsetMs = Number.isFinite(ms) ? ms : 0;
+  }
+
+  // Server-clock-adjusted "now"
+  _now() {
+    return Date.now() + this.clockOffsetMs;
+  }
+
   handlePlaybackStarted(data) {
+    if (!data || !data.trackUrl) return;
     const { trackUrl, serverTimestamp } = data;
     this.lastServerTimestamp = serverTimestamp;
-    this.lastKnownPosition = 0;
+    this.lastKnownPosition = data.position || 0;
 
-    const elapsed = (Date.now() - serverTimestamp) / 1000;
+    const elapsed = (this._now() - serverTimestamp) / 1000;
     this.offsetEstimate = elapsed;
     this.offsetSamples = [elapsed];
 
     this.audio.src = trackUrl;
-    this.audio.currentTime = Math.max(0, elapsed);
+    // serverTimestamp marks when {position} became current; mirror the
+    // resumed/seeked math so all three handlers share one semantic
+    this.audio.currentTime = Math.max(0, this.lastKnownPosition + elapsed);
     this.audio.play().catch(err => console.error('Error playing audio:', err));
 
     this.startSync();
@@ -64,7 +79,7 @@ export class AudioSync {
     this.lastServerTimestamp = serverTimestamp;
     this.lastKnownPosition = position;
 
-    const elapsed = (Date.now() - serverTimestamp) / 1000;
+    const elapsed = (this._now() - serverTimestamp) / 1000;
     const targetTime = position + elapsed;
 
     this.audio.currentTime = Math.max(0, targetTime);
@@ -78,7 +93,7 @@ export class AudioSync {
     this.lastServerTimestamp = serverTimestamp;
     this.lastKnownPosition = position;
 
-    const elapsed = (Date.now() - serverTimestamp) / 1000;
+    const elapsed = (this._now() - serverTimestamp) / 1000;
     const targetTime = position + elapsed;
 
     this.audio.currentTime = Math.max(0, targetTime);
@@ -110,7 +125,7 @@ export class AudioSync {
   correctDrift() {
     if (!this.audio || this.audio.paused || this.audio.ended) return;
 
-    const now = Date.now();
+    const now = this._now();
     const elapsed = (now - this.lastServerTimestamp) / 1000;
     const expectedPosition = this.lastKnownPosition + elapsed;
     const actualPosition = this.audio.currentTime;

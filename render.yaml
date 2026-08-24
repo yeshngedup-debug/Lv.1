@@ -1,16 +1,34 @@
+# Iris SYNCD — Render Blueprint
+# Deploy: push this repo, then "New +" -> "Blueprint" in the Render dashboard.
+# Docs: https://render.com/docs/blueprint-spec
+
 services:
   - type: web
-    name: iris
-    env: node
-    plan: free
-    buildCommand: npm install && npm run build
+    name: iris-syncd
+    runtime: node
+    plan: free                 # upgrade for always-on + persistent disk
+    buildCommand: npm install && npm run build && npm test
     startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
     envVars:
       - key: NODE_ENV
         value: production
+      # Render injects this automatically; the app derives QR/join URLs from it
+      - key: RENDER_EXTERNAL_URL
+        sync: false
+      # Comma-separated allowlist in production, e.g. https://iris-syncd.onrender.com
       - key: CORS_ORIGIN
         value: '*'
       - key: SESSION_TIMEOUT
-        value: '3600000'
+        value: '3600000'       # 1 hour
+      - key: LOG_LEVEL
+        value: info
+      - key: UPLOAD_RATE_LIMIT_MAX
+        value: '30'
+      # Optional: provision a Render Redis instance and paste its internal URL
+      # to enable horizontal scaling via the Socket.IO Redis adapter.
+      # NOTE: sessions also live in an in-process Map; multi-instance mode
+      # requires sticky sessions (Render supports them on paid plans).
       - key: REDIS_URL
         sync: false

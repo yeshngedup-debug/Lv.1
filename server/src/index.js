@@ -9,7 +9,8 @@ import helmet from 'helmet';
 import { v4 as uuidv4 } from 'uuid';
 import QRCode from 'qrcode';
 import { dirname, join } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import winston from 'winston';
 
@@ -21,6 +22,11 @@ const __dirname = dirname(__filename);
 // Static file paths for production
 const hostDashboardPath = join(__dirname, '../../host-dashboard/dist');
 const participantPagePath = join(__dirname, '../../participant-page/dist');
+
+// Uploaded track storage (audio broadcast)
+const UPLOAD_DIR = join(__dirname, '../../uploads');
+fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+const MAX_UPLOAD_BYTES = 50 * 1024 * 1024; // must stay in sync with host MAX_AUDIO_SIZE
 
 // Configuration
 const config = {
@@ -34,6 +40,9 @@ const config = {
   rateLimitMaxRequests: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   logLevel: process.env.LOG_LEVEL || 'info',
 };
+
+// Session codes are 8-char uppercase alphanumeric slices of a UUID
+const SESSION_ID_RE = /^[A-Z0-9]{8}$/;
 
 // Winston logger
 const logger = winston.createLogger({
@@ -109,8 +118,21 @@ initRedis().then(() => {
 });
 
 // Security middleware
+// Strict CSP only in production: dev needs Vite HMR (eval + ws), prod does not
 app.use(helmet({
-  contentSecurityPolicy: false, // WebSocket needs inline scripts
+  contentSecurityPolicy: config.nodeEnv === 'production' ? {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", 'https://fonts.googleapis.com'],
+      fontSrc: ["'self'", 'https://fonts.gstatic.com', 'data:'],
+      imgSrc: ["'self'", 'data:', 'blob:'],
+      mediaSrc: ["'self'", 'blob:'],
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+      workerSrc: ["'self'", 'blob:'],
+      frameAncestors: ["'none'"],
+    },
+  } : false,
   crossOriginEmbedderPolicy: false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
@@ -127,7 +149,10 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Rate limiting
+// Trust the reverse proxy (Render) so req.protocol/host reflect public URLs
+app.set('trust proxy', 1);
+
+// Rate limiting: general API + stricter budget for uploads
 const apiLimiter = rateLimit({
   windowMs: config.rateLimitWindowMs,
   max: config.rateLimitMaxRequests,
@@ -136,6 +161,14 @@ const apiLimiter = rateLimit({
   legacyHeaders: false,
 });
 app.use('/api/', apiLimiter);
+
+const uploadLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: parseInt(process.env.UPLOAD_RATE_LIMIT_MAX) || 30,
+  message: { error: 'Too many uploads, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Request logging
 app.use((req, res, next) => {
@@ -153,30 +186,16 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve static files in production
+// Serve static files in production.
+// The /join static mount serves hashed assets AND service-worker files
+// (workbox-*.js hash changes per build, so no hardcoded routes).
 if (config.nodeEnv === 'production') {
-  // Participant page at /join
-  app.use('/join/assets', express.static(join(__dirname, '../../participant-page/dist/assets')));
-  app.use('/join/manifest.webmanifest', express.static(join(__dirname, '../../participant-page/dist/manifest.webmanifest')));
-  app.use('/join/sw.js', express.static(join(__dirname, '../../participant-page/dist/sw.js')));
-  app.use('/join/workbox-e4022e15.js', express.static(join(__dirname, '../../participant-page/dist/workbox-e4022e15.js')));
-  app.use('/join/favicon.ico', express.static(join(__dirname, '../../participant-page/dist/favicon.ico')));
-  app.use('/join', express.static(join(__dirname, '../../participant-page/dist')));
+  // Participant page at /join and /p (PWA alias)
+  app.use('/join', express.static(participantPagePath));
+  app.use('/p', express.static(participantPagePath));
 
-  // Participant page at /p (alias)
-  app.use('/p/assets', express.static(join(__dirname, '../../participant-page/dist/assets')));
-  app.use('/p/manifest.webmanifest', express.static(join(__dirname, '../../participant-page/dist/manifest.webmanifest')));
-  app.use('/p/sw.js', express.static(join(__dirname, '../../participant-page/dist/sw.js')));
-  app.use('/p/workbox-e4022e15.js', express.static(join(__dirname, '../../participant-page/dist/workbox-e4022e15.js')));
-  app.use('/p/favicon.ico', express.static(join(__dirname, '../../participant-page/dist/favicon.ico')));
-  app.use('/p', express.static(join(__dirname, '../../participant-page/dist')));
-
-  // Host dashboard assets
-  app.use('/assets', express.static(join(__dirname, '../../host-dashboard/dist/assets')));
-  app.use('/favicon.ico', express.static(join(__dirname, '../../host-dashboard/dist/favicon.ico')));
-
-  // Host dashboard HTML fallback
-  app.use(express.static(join(__dirname, '../../host-dashboard/dist')));
+  // Host dashboard at root
+  app.use(express.static(hostDashboardPath));
 }
 
 // Redis-backed session store for horizontal scaling
@@ -236,6 +255,8 @@ const sessionStore = new SessionStore();
 class Session {
   constructor(id) {
     this.id = id;
+    // Secret held only by the host client; authorizes privileged HTTP routes
+    this.hostToken = uuidv4();
     this.hostSocketId = null;
     this.devices = new Map();
     this.createdAt = Date.now();
@@ -243,7 +264,16 @@ class Session {
     this.currentTrack = null;
     this.isPlaying = false;
     this.playbackPosition = 0;
-    this.playbackStartedAt = null;
+    // Server-authoritative playback state machine (audio broadcast)
+    this.playback = {
+      trackId: null,
+      trackName: null,
+      trackUrl: null,
+      duration: 0,
+      isPlaying: false,
+      position: 0,       // position at last state change
+      startedAt: null,   // Date.now() of last transition to playing
+    };
   }
 
   addDevice(deviceId, socketId, role, nickname, isCameraEnabled, isSpeakerEnabled) {
@@ -312,16 +342,71 @@ async function hasSession(sessionId) {
   return sessions.has(sessionId);
 }
 
+// Uploaded track registry (per-process; tracks are files on local disk)
+const uploads = new Map();      // fileId -> { id, sessionId, filePath, name, mimeType, size }
+const sessionFiles = new Map(); // sessionId -> Set<fileId>
+
+function getPlaybackSnapshot(session) {
+  const pb = session.playback;
+  if (!pb || !pb.trackId) return null;
+  const position = pb.isPlaying
+    ? Math.min(pb.position + (Date.now() - pb.startedAt) / 1000, pb.duration || Infinity)
+    : pb.position;
+  return {
+    trackUrl: pb.trackUrl,
+    trackName: pb.trackName,
+    duration: pb.duration,
+    isPlaying: pb.isPlaying,
+    position,
+    serverTimestamp: Date.now(),
+  };
+}
+
+function setPlaybackState(session, { isPlaying, position }) {
+  const pb = session.playback;
+  pb.isPlaying = isPlaying;
+  pb.position = position;
+  pb.startedAt = isPlaying ? Date.now() : null;
+  session.isPlaying = isPlaying;
+  session.playbackPosition = position;
+}
+
+function destroyUploadedFiles(sessionId) {
+  const ids = sessionFiles.get(sessionId);
+  if (!ids) return;
+  for (const id of ids) {
+    const meta = uploads.get(id);
+    if (!meta) continue;
+    // Synchronous so the registry is always consistent with disk afterwards
+    try {
+      fs.unlinkSync(meta.filePath);
+    } catch (err) {
+      logger.warn('Failed to delete uploaded track', { fileId: id, error: err.message });
+    }
+    uploads.delete(id);
+  }
+  sessionFiles.delete(sessionId);
+}
+
+// Single teardown path used by host end-session, host disconnect, and expiry
+async function destroySession(sessionId) {
+  io.to(`session:${sessionId}`).emit('session-ended');
+  await deleteSession(sessionId);
+  sessions.delete(sessionId);
+  destroyUploadedFiles(sessionId);
+}
+
 // Socket.IO connection handling
 io.on('connection', (socket) => {
   logger.info('Client connected', { socketId: socket.id, ip: socket.handshake.address });
 
-  socket.on('create-session', async (callback) => {
+  socket.on('create-session', async (...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
     try {
       const sessionId = uuidv4().slice(0, 8).toUpperCase();
       const session = new Session(sessionId);
       session.hostSocketId = socket.id;
-      sessions.set(sessionId, session);
+      await setSession(sessionId, session); // FIXED: was local-only, invisible to other instances when Redis is on
 
       socket.join(`session:${sessionId}`);
       socket.data.sessionId = sessionId;
@@ -331,24 +416,32 @@ io.on('connection', (socket) => {
       const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
 
       logger.info('Session created', { sessionId, hostSocketId: socket.id });
-      callback({
+      callback?.({
         sessionId,
         joinUrl,
         qrCode: qrCodeDataUrl,
+        hostToken: session.hostToken,
       });
     } catch (err) {
       logger.error('Failed to create session', { error: err.message });
-      callback({ error: 'Failed to create session' });
+      callback?.({ error: 'Failed to create session' });
     }
   });
 
-  socket.on('rejoin-session', async ({ sessionId }, callback) => {
+  socket.on('rejoin-session', async (...args) => {
+    const { sessionId } = args[0] || {};
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
     try {
+      if (!sessionId || !SESSION_ID_RE.test(sessionId)) {
+        return callback?.({ error: 'Invalid session id' });
+      }
       const session = await getSession(sessionId);
       if (!session) {
-        return callback({ error: 'Session not found' });
+        return callback?.({ error: 'Session not found' });
       }
 
+      // Re-issue the host token so a stale holder loses host privileges
+      session.hostToken = uuidv4();
       session.hostSocketId = socket.id;
       socket.join(`session:${sessionId}`);
       socket.data.sessionId = sessionId;
@@ -360,22 +453,41 @@ io.on('connection', (socket) => {
       const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
 
       logger.info('Session rejoined', { sessionId, hostSocketId: socket.id });
-      callback({
+      callback?.({
         sessionId,
         joinUrl,
         qrCode: qrCodeDataUrl,
+        hostToken: session.hostToken,
+        // FIXED: host client reads devices/playback state from this response;
+        // they were never sent so every host refresh showed an empty fleet
+        devices: Array.from(session.devices.values()).map(d => ({
+          id: d.id,
+          role: d.role,
+          nickname: d.nickname,
+          isCameraEnabled: d.isCameraEnabled,
+          isSpeakerEnabled: d.isSpeakerEnabled,
+        })),
+        isPlaying: session.isPlaying,
+        currentTrack: session.currentTrack,
+        playbackPosition: session.playbackPosition,
+        playback: getPlaybackSnapshot(session),
       });
     } catch (err) {
       logger.error('Failed to rejoin session', { error: err.message });
-      callback({ error: 'Failed to rejoin session' });
+      callback?.({ error: 'Failed to rejoin session' });
     }
   });
 
-  socket.on('join-session', async ({ sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled }, callback) => {
+  socket.on('join-session', async (...args) => {
+    const { sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled } = args[0] || {};
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
     try {
+      if (!sessionId || !SESSION_ID_RE.test(sessionId)) {
+        return callback?.({ error: 'Invalid session id' });
+      }
       const session = await getSession(sessionId);
       if (!session) {
-        return callback({ error: 'Session not found' });
+        return callback?.({ error: 'Session not found' });
       }
 
       const deviceId = socket.id;
@@ -402,27 +514,27 @@ io.on('connection', (socket) => {
         });
       }
 
-      callback({
+      callback?.({
         sessionId,
         deviceId,
         isHost: false,
       });
     } catch (err) {
       logger.error('Failed to join session', { error: err.message });
-      callback({ error: 'Failed to join session' });
+      callback?.({ error: 'Failed to join session' });
     }
   });
 
   socket.on('offer', ({ targetDeviceId, offer }, callback) => {
     const sessionId = socket.data.sessionId;
     const session = sessions.get(sessionId);
-    if (!session) return callback({ error: 'Session not found' });
+    if (!session) return callback?.({ error: 'Session not found' });
 
     const targetDevice = session.devices.get(targetDeviceId);
     if (targetDevice) {
       io.to(targetDevice.socketId).emit('offer', { offer, fromDeviceId: socket.data.deviceId });
     }
-    callback({ success: true });
+    callback?.({ success: true });
   });
 
   socket.on('answer', ({ targetDeviceId, answer }) => {
@@ -449,8 +561,94 @@ io.on('connection', (socket) => {
     } else {
       const device = session.devices.get(targetDeviceId);
       if (device) {
-        io.to(device.socketId).emit('ice-candidate', { candidate });
+        io.to(device.socketId).emit('ice-candidate', {
+          candidate,
+          // FIXED: fromDeviceId was omitted; the participant filters candidates
+          // by `fromDeviceId === targetDeviceId` so host->device candidates were silently dropped
+          fromDeviceId: socket.data.role === 'host' ? 'host' : socket.data.deviceId,
+        });
       }
+    }
+  });
+
+  // ===== Camera & device-control relays =====
+  // FIXED: clients emitted these events but the server had no handlers,
+  // so offers, camera lists, and host control commands never reached their targets
+
+  socket.on('camera-offer', ({ deviceId, offer }, callback) => {
+    const session = sessions.get(socket.data.sessionId);
+    // Only the owning participant may offer, and only within its own session
+    if (!session || !offer || deviceId !== socket.data.deviceId) {
+      return callback?.({ error: 'Invalid camera offer' });
+    }
+    if (session.hostSocketId) {
+      io.to(session.hostSocketId).emit('camera-offer', { deviceId, offer });
+    }
+    callback?.({ success: true });
+  });
+
+  socket.on('camera-answer', ({ deviceId, answer }, callback) => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    if (!session || !answer) return;
+    const device = session.devices.get(deviceId);
+    if (device) {
+      io.to(device.socketId).emit('camera-answer', { answer });
+    }
+    callback?.({ success: true });
+  });
+
+  socket.on('device-cameras', ({ cameras }) => {
+    const session = sessions.get(socket.data.sessionId);
+    if (!session || !Array.isArray(cameras)) return;
+    if (session.hostSocketId) {
+      io.to(session.hostSocketId).emit('device-cameras-update', { deviceId: socket.data.deviceId, cameras });
+    }
+  });
+
+  socket.on('camera-switched', ({ cameraId }) => {
+    const session = sessions.get(socket.data.sessionId);
+    if (!session) return;
+    if (session.hostSocketId) {
+      io.to(session.hostSocketId).emit('camera-active-update', { deviceId: socket.data.deviceId, cameraId });
+    }
+  });
+
+  socket.on('switch-camera', ({ deviceId, cameraId }) => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    const device = session && session.devices.get(deviceId);
+    if (device && cameraId) {
+      io.to(device.socketId).emit('switch-camera', { cameraId });
+    }
+  });
+
+  socket.on('request-quality', ({ deviceId, quality }) => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    const device = session && session.devices.get(deviceId);
+    if (device && quality) {
+      io.to(device.socketId).emit('request-quality', { quality });
+    }
+  });
+
+  socket.on('quality-changed', ({ quality }) => {
+    const session = sessions.get(socket.data.sessionId);
+    if (!session) return;
+    if (session.hostSocketId) {
+      io.to(session.hostSocketId).emit('quality-changed', { deviceId: socket.data.deviceId, quality });
+    }
+  });
+
+  socket.on('remove-device', ({ deviceId }) => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    const device = session && session.devices.get(deviceId);
+    const target = device ? io.sockets.sockets.get(device.socketId) : null;
+    if (target) {
+      target.emit('removed-from-session');
+      // Force disconnect; the disconnect handler owns cleanup + notifications
+      target.disconnect(true);
     }
   });
 
@@ -458,10 +656,166 @@ io.on('connection', (socket) => {
     const { sessionId, role } = socket.data;
     if (role !== 'host') return;
 
-    io.to(`session:${sessionId}`).emit('session-ended');
-    deleteSession(sessionId);
-    sessions.delete(sessionId);
+    destroySession(sessionId);
     logger.info('Session ended by host', { sessionId });
+  });
+
+  // ===== Audio broadcast: server-authoritative playback state machine =====
+
+  socket.on('start-playing', async ({ trackId, duration } = {}, callback) => {
+    // Always ack — a silent return leaves the client awaiting forever
+    if (socket.data.role !== 'host') {
+      return callback?.({ error: 'Host authorization required' });
+    }
+    const session = sessions.get(socket.data.sessionId);
+    const meta = session && trackId ? uploads.get(trackId) : null;
+    if (!meta || meta.sessionId !== session.id) {
+      return callback?.({ error: 'Track not uploaded for this session' });
+    }
+
+    const pb = session.playback;
+    pb.trackId = meta.id;
+    pb.trackName = meta.name;
+    pb.trackUrl = `${BASE_URL}/api/audio/${meta.id}`;
+    // Host reports the real duration so seek clamping and REST snapshots work
+    pb.duration = typeof duration === 'number' && Number.isFinite(duration) && duration > 0
+      ? duration
+      : 0;
+    setPlaybackState(session, { isPlaying: true, position: 0 });
+    session.currentTrack = { trackId: meta.id, trackName: meta.name, trackUrl: pb.trackUrl };
+    await setSession(session.id, session);
+
+    io.to(`session:${session.id}`).emit('playback-started', {
+      trackUrl: pb.trackUrl,
+      trackName: meta.name,
+      position: 0,
+      serverTimestamp: Date.now(),
+    });
+    callback?.({ success: true });
+  });
+
+  socket.on('pause-playing', async (...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
+    if (socket.data.role !== 'host') {
+      return callback?.({ error: 'Host authorization required' });
+    }
+    const session = sessions.get(socket.data.sessionId);
+    const pb = session && session.playback;
+    if (!session || !pb.trackId || !pb.isPlaying) return;
+
+    const position = Math.min(pb.position + (Date.now() - pb.startedAt) / 1000, pb.duration || Infinity);
+    setPlaybackState(session, { isPlaying: false, position });
+    await setSession(session.id, session);
+
+    io.to(`session:${session.id}`).emit('playback-paused', { position, serverTimestamp: Date.now() });
+    callback?.({ success: true });
+  });
+
+  socket.on('resume-playing', async (...args) => {
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
+    if (socket.data.role !== 'host') {
+      return callback?.({ error: 'Host authorization required' });
+    }
+    const session = sessions.get(socket.data.sessionId);
+    const pb = session && session.playback;
+    if (!session || !pb.trackId || pb.isPlaying) return;
+
+    setPlaybackState(session, { isPlaying: true, position: pb.position });
+    await setSession(session.id, session);
+
+    io.to(`session:${session.id}`).emit('playback-resumed', {
+      position: pb.position,
+      serverTimestamp: Date.now(),
+    });
+    callback?.({ success: true });
+  });
+
+  socket.on('seek-playing', async (...args) => {
+    const { position } = args[0] || {};
+    const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
+    if (socket.data.role !== 'host') {
+      return callback?.({ error: 'Host authorization required' });
+    }
+    const session = sessions.get(socket.data.sessionId);
+    const pb = session && session.playback;
+    if (!session || !pb.trackId || typeof position !== 'number' || !Number.isFinite(position)) {
+      return callback?.({ error: 'Invalid seek position' });
+    }
+
+    // Preserve playing state across a seek; clamp into the known duration
+    const maxPos = pb.duration > 0 ? pb.duration : Number.MAX_SAFE_INTEGER;
+    const clamped = Math.max(0, Math.min(position, maxPos));
+    setPlaybackState(session, { isPlaying: pb.isPlaying, position: clamped });
+    await setSession(session.id, session);
+
+    io.to(`session:${session.id}`).emit('playback-seeked', { position: clamped, serverTimestamp: Date.now() });
+    callback?.({ success: true });
+  });
+
+  socket.on('track-ended', async () => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    const pb = session && session.playback;
+    if (!session || !pb.trackId) return;
+
+    setPlaybackState(session, { isPlaying: false, position: pb.duration > 0 ? pb.duration : pb.position });
+    await setSession(session.id, session);
+
+    io.to(`session:${session.id}`).emit('playback-paused', {
+      position: pb.duration > 0 ? pb.duration : pb.position,
+      serverTimestamp: Date.now(),
+    });
+  });
+
+  // NTP-style clock sync so participants can correct server/client clock skew
+  socket.on('clock-sync', (callback) => {
+    if (typeof callback === 'function') callback(Date.now());
+  });
+
+  // ===== Push-to-talk transport =====
+
+  socket.on('push-to-talk-start', () => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    if (session) io.to(`session:${session.id}`).emit('host-mic-active');
+  });
+
+  socket.on('push-to-talk-stop', () => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    if (!session) return;
+    io.to(`session:${session.id}`).emit('host-mic-inactive');
+    io.to(`session:${session.id}`).emit('ptt-stopped');
+  });
+
+  socket.on('ptt-offer', ({ deviceId, offer }) => {
+    if (socket.data.role !== 'host') return;
+    const session = sessions.get(socket.data.sessionId);
+    const device = session && deviceId ? session.devices.get(deviceId) : null;
+    if (device && offer) {
+      io.to(device.socketId).emit('ptt-offer', { offer });
+    }
+  });
+
+  socket.on('ptt-answer', ({ answer }) => {
+    if (socket.data.role === 'host') return; // answers come only from devices
+    const session = sessions.get(socket.data.sessionId);
+    if (session && session.hostSocketId && answer) {
+      io.to(session.hostSocketId).emit('ptt-answer', { deviceId: socket.data.deviceId, answer });
+    }
+  });
+
+  socket.on('ptt-ice-candidate', ({ targetDeviceId, candidate }) => {
+    const session = sessions.get(socket.data.sessionId);
+    if (!session || !candidate) return;
+    if (socket.data.role === 'host') {
+      const device = targetDeviceId ? session.devices.get(targetDeviceId) : null;
+      if (device) {
+        io.to(device.socketId).emit('ptt-ice-candidate', { candidate, fromDeviceId: 'host' });
+      }
+    } else if (session.hostSocketId) {
+      io.to(session.hostSocketId).emit('ptt-ice-candidate', { candidate, fromDeviceId: socket.data.deviceId });
+    }
   });
 
   socket.on('device-ping', ({ deviceId }) => {
@@ -475,7 +829,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', async (reason) => {
     const { sessionId, deviceId, role } = socket.data;
     logger.info('Client disconnected', { socketId: socket.id, sessionId, deviceId, role, reason });
 
@@ -485,9 +839,7 @@ io.on('connection', (socket) => {
     if (!session) return;
 
     if (role === 'host') {
-      io.to(`session:${sessionId}`).emit('session-ended');
-      deleteSession(sessionId);
-      sessions.delete(sessionId);
+      destroySession(sessionId);
     } else {
       session.removeDevice(deviceId);
       io.to(`session:${sessionId}`).emit('device-left', { deviceId });
@@ -496,7 +848,7 @@ io.on('connection', (socket) => {
         io.to(session.hostSocketId).emit('device-left', { deviceId });
       }
 
-      sessions.set(sessionId, session);
+      await setSession(sessionId, session); // FIXED: was local-only, Redis copy kept the removed device alive
     }
   });
 });
@@ -516,7 +868,11 @@ app.get('/api/health', (req, res) => {
 
 // Session info endpoint
 app.get('/api/sessions/:sessionId', async (req, res) => {
-  const session = await getSession(req.params.sessionId);
+  const { sessionId } = req.params;
+  if (!SESSION_ID_RE.test(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session id' });
+  }
+  const session = await getSession(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
   }
@@ -532,6 +888,77 @@ app.get('/api/sessions/:sessionId', async (req, res) => {
     })),
     currentTrack: session.currentTrack,
     isPlaying: session.isPlaying,
+    playback: getPlaybackSnapshot(session),
+  });
+});
+
+// Track upload: raw body keeps this dependency-free (no multer needed).
+// Requires the host token issued at session create/rejoin — otherwise anyone
+// who guesses an 8-char code could fill the disk.
+app.post('/api/sessions/:sessionId/upload', uploadLimiter, express.raw({
+  type: (req) => String(req.headers['content-type'] || '').startsWith('audio/'),
+  limit: MAX_UPLOAD_BYTES + 1,
+}), async (req, res) => {
+  const { sessionId } = req.params;
+  if (!SESSION_ID_RE.test(sessionId)) {
+    return res.status(400).json({ error: 'Invalid session id' });
+  }
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: 'Session not found' });
+  }
+  if (req.headers['x-host-token'] !== session.hostToken) {
+    return res.status(403).json({ error: 'Host authorization required' });
+  }
+  if (!req.body || req.body.length === 0) {
+    return res.status(400).json({ error: 'Empty upload body' });
+  }
+  if (req.body.length > MAX_UPLOAD_BYTES) {
+    return res.status(413).json({ error: 'File too large. Maximum size is 50MB.' });
+  }
+
+  const mimeType = String(req.headers['content-type']).split(';')[0].trim();
+  // Sanitize the display name; the file on disk uses an opaque id instead
+  const safeName = String(req.query.name || 'track')
+    .slice(0, 120)
+    .replace(/[^A-Za-z0-9 ._()-]/g, '_') || 'track';
+
+  const fileId = uuidv4();
+  const filePath = join(UPLOAD_DIR, `${sessionId}-${fileId}`);
+  try {
+    await fs.promises.writeFile(filePath, req.body);
+  } catch (err) {
+    logger.error('Failed to write uploaded track', { sessionId, error: err.message });
+    return res.status(500).json({ error: 'Failed to store track' });
+  }
+
+  uploads.set(fileId, { id: fileId, sessionId, filePath, name: safeName, mimeType, size: req.body.length });
+  if (!sessionFiles.has(sessionId)) sessionFiles.set(sessionId, new Set());
+  sessionFiles.get(sessionId).add(fileId);
+
+  logger.info('Track uploaded', { sessionId, fileId, name: safeName, size: req.body.length });
+  res.json({
+    trackId: fileId,
+    trackName: safeName,
+    // Derive from the request so the URL is correct behind proxies AND in tests
+    trackUrl: `${req.protocol}://${req.get('host')}/api/audio/${fileId}`,
+    size: req.body.length,
+  });
+});
+
+// Track download: validate id shape before hitting the registry
+app.get('/api/audio/:fileId', (req, res) => {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(req.params.fileId)) {
+    return res.status(400).json({ error: 'Invalid track id' });
+  }
+  const meta = uploads.get(req.params.fileId);
+  if (!meta) {
+    return res.status(404).json({ error: 'Track not found' });
+  }
+  res.setHeader('Content-Type', meta.mimeType);
+  res.setHeader('Cache-Control', 'no-store');
+  res.sendFile(meta.filePath, (err) => {
+    if (err && !res.headersSent) res.status(404).json({ error: 'Track not found' });
   });
 });
 
@@ -554,6 +981,24 @@ app.get('/', (req, res) => {
   });
 });
 
+// SPA fallback — MUST come after static + API routes.
+// Deep links like /join/ABCD1234 have no file on disk; without this,
+// every QR code scan returns 404 JSON in production.
+const wantsHtml = (req) => (req.headers.accept || '').includes('text/html');
+
+if (config.nodeEnv === 'production') {
+  app.use((req, res, next) => {
+    if (!wantsHtml(req)) return next();
+    if (req.path === '/join' || req.path.startsWith('/join/') || req.path.startsWith('/p')) {
+      return res.sendFile(join(participantPagePath, 'index.html'));
+    }
+    if (req.method === 'GET' && !req.path.startsWith('/api') && req.path !== '/socket.io') {
+      return res.sendFile(join(hostDashboardPath, 'index.html'));
+    }
+    next();
+  });
+}
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Not found' });
@@ -566,19 +1011,17 @@ app.use((err, req, res, next) => {
 });
 
 // Cleanup intervals
-setInterval(() => {
+const sessionExpiryInterval = setInterval(() => {
   for (const [sessionId, session] of sessions.entries()) {
     if (session.isExpired()) {
-      io.to(`session:${sessionId}`).emit('session-ended');
-      deleteSession(sessionId);
-      sessions.delete(sessionId);
+      destroySession(sessionId);
       logger.info('Session expired and cleaned up', { sessionId });
     }
   }
 }, 60000);
 
 // Cleanup stale devices
-setInterval(() => {
+const staleDeviceInterval = setInterval(() => {
   const now = Date.now();
   const STALE_THRESHOLD = 30000;
 
@@ -640,14 +1083,33 @@ process.on('uncaughtException', (err) => {
   shutdown('uncaughtException');
 });
 
-// Start server
-server.listen(PORT, () => {
-  logger.info('Iris SYNCD server started', {
-    port: PORT,
-    baseUrl: BASE_URL,
-    environment: config.nodeEnv,
-    redis: redisReady ? 'connected' : 'not configured',
-  });
-});
+// Start server only when executed directly (importing runs tests/tools instead)
+const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-export { app, server, io, sessions, getSession, setSession, deleteSession, hasSession, Session, SessionStore };
+if (isMainModule) {
+  server.listen(PORT, () => {
+    logger.info('Iris SYNCD server started', {
+      port: PORT,
+      baseUrl: BASE_URL,
+      environment: config.nodeEnv,
+      redis: redisReady ? 'connected' : 'not configured',
+    });
+  });
+}
+
+// Test hook: stop timers + servers without killing the process
+function _stopForTests() {
+  clearInterval(sessionExpiryInterval);
+  clearInterval(staleDeviceInterval);
+  io.close();
+  server.close();
+  if (redisClient) redisClient.disconnect();
+  if (redisSubClient) redisSubClient.disconnect();
+}
+
+export {
+  app, server, io, sessions,
+  getSession, setSession, deleteSession, hasSession,
+  Session, SessionStore, destroySession, destroyUploadedFiles, getPlaybackSnapshot,
+  uploads, sessionFiles, _stopForTests,
+};

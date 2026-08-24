@@ -10,9 +10,10 @@
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w host-dashboard\" \"npm run dev -w participant-page\"",
-    "build": "npm install && npm run build -w host-dashboard && npm run build -w participant-page",
+    "build": "npm run build -w host-dashboard && npm run build -w participant-page",
     "start": "node server/src/index.js",
-    "render-build": "npm install --workspaces && npm run build -w host-dashboard && npm run build -w participant-page"
+    "test": "node --test --test-force-exit tests/server.test.mjs",
+    "render-build": "npm install --workspaces && npm run build"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.4",

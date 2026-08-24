@@ -10,6 +10,8 @@ export const AudioBroadcast = ({
   isTalking,
   playbackPosition,
   duration,
+  uploading = false,
+  uploadedTrack = null,
   handleFileChange,
   handleSeek,
   startPlayback,
@@ -57,7 +59,11 @@ export const AudioBroadcast = ({
             </label>
             {audioFile && (
               <span className="file-info">
-                {audioFile.type} · {formatFileSize(audioFile.size)}
+                {uploading
+                  ? 'Uploading to server…'
+                  : uploadedTrack
+                  ? `${audioFile.type} · ${formatFileSize(audioFile.size)} · ready for fleet`
+                  : `${audioFile.type} · ${formatFileSize(audioFile.size)}`}
               </span>
             )}
           </div>
@@ -84,17 +90,17 @@ export const AudioBroadcast = ({
 
               <div className="playback-buttons">
                 {isPlaying ? (
-                  <button onClick={pausePlayback} className="gridline-btn-primary" disabled={reconnecting}>
+                  <button onClick={pausePlayback} className="gridline-btn-primary" disabled={reconnecting || !uploadedTrack}>
                     <Pause size={14} />
                     <span>Pause</span>
                   </button>
                 ) : (
-                  <button onClick={startPlayback} className="gridline-btn-primary" disabled={reconnecting || !audioUrl}>
+                  <button onClick={startPlayback} className="gridline-btn-primary" disabled={reconnecting || !audioUrl || !uploadedTrack || uploading}>
                     <Play size={14} />
-                    <span>Play Track</span>
+                    <span>{uploading ? 'Uploading…' : 'Play Track'}</span>
                   </button>
                 )}
-                <button onClick={resumePlayback} className="gridline-btn-ghost" disabled={reconnecting || isPlaying}>
+                <button onClick={resumePlayback} className="gridline-btn-ghost" disabled={reconnecting || isPlaying || !uploadedTrack}>
                   <RotateCcw size={14} />
                   <span>Resume</span>
                 </button>

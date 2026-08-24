@@ -55,6 +55,13 @@ function App() {
   const reconnectTimeoutRef = useRef(null);
   const wakeLockRef = useRef(null);
 
+  // Push-to-talk receive side + clock sync + mic track ownership
+  const pttPcRef = useRef(null);          // PC receiving host push-to-talk audio
+  const hostAudioRef = useRef(null);      // <audio> that plays host PTT stream
+  const [hostTalking, setHostTalking] = useState(false);
+  const clockOffsetRef = useRef(0);       // (server - client) ms, from clock-sync
+  const micStreamRef = useRef(null);      // separate mic stream, not part of any camera stream
+
   const extractSessionIdFromUrl = useCallback(() => {
     const pathParts = window.location.pathname.split('/');
     // Handle /join/SESSION_ID format
@@ -156,9 +163,11 @@ function App() {
     });
 
     // Heartbeat ping to keep connection alive
+    // FIXED: was emitting Socket.IO-level 'ping' which the server never handles;
+    // the stale-device reaper then evicted every device 30s after join
     const pingInterval = setInterval(() => {
-      if (newSocket.connected) {
-        newSocket.emit('ping');
+      if (newSocket.connected && deviceIdRef.current) {
+        newSocket.emit('device-ping', { deviceId: deviceIdRef.current });
       }
     }, 5000);
     newSocket.on('disconnect', () => clearInterval(pingInterval));
@@ -184,10 +193,11 @@ function App() {
     socket.on('playback-started', (data) => {
       setIsPlaying(true);
       setCurrentTrack(data);
-      
-      // Initialize audio sync for speaker role
-      if (audioRef.current && role === 'speaker') {
-        audioSyncRef.current = new AudioSync(audioRef.current, socket);
+
+      // Initialize audio sync for the combined 'device' role when speaker output is on
+      // FIXED: gated on role === 'speaker' which can never be true (UI only offers 'device')
+      if (audioRef.current && !audioSyncRef.current && isSpeakerEnabled) {
+        audioSyncRef.current = new AudioSync(audioRef.current, socket, { clockOffsetMs: clockOffsetRef.current });
       }
     });
 
@@ -211,10 +221,46 @@ function App() {
 
     socket.on('host-mic-active', () => {
       console.log('Host is talking');
+      setHostTalking(true);
     });
 
     socket.on('host-mic-inactive', () => {
       console.log('Host stopped talking');
+      setHostTalking(false);
+    });
+
+    // Push-to-talk: answer the host's WebRTC offer and play the mic stream
+    socket.on('ptt-offer', async ({ offer }) => {
+      try {
+        if (!offer) return;
+        if (pttPcRef.current) {
+          pttPcRef.current.close();
+          pttPcRef.current = null;
+        }
+        const pc = new PeerConnectionManager(socket, 'host', false, { iceEventName: 'ptt-ice-candidate' });
+        pc.onRemoteStream = (stream) => {
+          if (hostAudioRef.current) {
+            hostAudioRef.current.srcObject = stream;
+            hostAudioRef.current.play().catch(err => console.warn('PTT playback blocked:', err));
+          }
+        };
+        const answer = await pc.handleOffer(offer);
+        if (!answer || pc._closed) return;
+        socket.emit('ptt-answer', { answer });
+        pttPcRef.current = pc;
+      } catch (err) {
+        console.error('Failed to handle push-to-talk offer:', err);
+      }
+    });
+
+    socket.on('ptt-stopped', () => {
+      if (pttPcRef.current) {
+        pttPcRef.current.close();
+        pttPcRef.current = null;
+      }
+      if (hostAudioRef.current) {
+        hostAudioRef.current.srcObject = null;
+      }
     });
 
     socket.on('switch-camera', async ({ cameraId }) => {
@@ -235,8 +281,16 @@ function App() {
       socket.off('removed-from-session');
       socket.off('host-mic-active');
       socket.off('host-mic-inactive');
+      socket.off('ptt-offer');
+      socket.off('ptt-stopped');
+      setHostTalking(false);
+      if (pttPcRef.current) {
+        pttPcRef.current.close();
+        pttPcRef.current = null;
+      }
       if (audioSyncRef.current) {
         audioSyncRef.current.destroy();
+        audioSyncRef.current = null;
       }
       if (peerConnectionRef.current) {
         peerConnectionRef.current.close();
@@ -246,8 +300,12 @@ function App() {
         streamRef.current.getTracks().forEach(t => t.stop());
         streamRef.current = null;
       }
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current = null;
+      }
     };
-  }, [socket, role]);
+  }, [socket, role, isSpeakerEnabled]);
 
 const requestMediaPermission = async (needsCamera, needsAudio) => {
     try {
@@ -280,6 +338,10 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
 
         setMediaPermission('granted');
         return true;
+      } else {
+        // FIXED: both toggles off fell through returning undefined, which silently blocked join
+        setMediaPermission('granted');
+        return true;
       }
     } catch (err) {
       console.error('Media permission denied:', err);
@@ -300,6 +362,32 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
     }
   };
 
+  // NTP-style clock sync: median of round-trip samples estimates (server - client) skew
+  const syncClock = useCallback(() => new Promise((resolve) => {
+    if (!socket) return resolve(0);
+    const samples = [];
+    let attempts = 0;
+    const tick = () => {
+      const t0 = Date.now();
+      socket.timeout(2000).emit('clock-sync', (err, serverTime) => {
+        const t1 = Date.now();
+        if (!err && typeof serverTime === 'number') {
+          samples.push(serverTime - (t0 + t1) / 2);
+        }
+        attempts += 1;
+        if (attempts < 5) {
+          tick();
+        } else {
+          samples.sort((a, b) => a - b);
+          clockOffsetRef.current = samples.length ? samples[Math.floor(samples.length / 2)] : 0;
+          console.log('Clock offset (ms):', Math.round(clockOffsetRef.current));
+          resolve(clockOffsetRef.current);
+        }
+      });
+    };
+    tick();
+  }), [socket]);
+
   const joinSession = async () => {
     if (!socket || !sessionId || !role) return;
 
@@ -310,13 +398,13 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
     const hasPermission = await requestMediaPermission(needsCamera, needsAudio);
     if (!hasPermission) return;
 
-    socket.emit('join-session', { 
-      sessionId, 
-      role, 
-      nickname, 
-      isCameraEnabled, 
-      isSpeakerEnabled 
-    }, (response) => {
+    socket.emit('join-session', {
+      sessionId,
+      role,
+      nickname,
+      isCameraEnabled,
+      isSpeakerEnabled
+    }, async (response) => {
       if (response.error) {
         setError(response.error);
         return;
@@ -326,13 +414,16 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
       setIsJoined(true);
       setSessionId(sessionId);
 
+      // Sync clocks before playback events can arrive so drift math is correct
+      await syncClock();
+
       if (isCameraEnabled) {
         startCameraStreaming();
       }
       if (isSpeakerEnabled) {
-        // Initialize audio sync for speaker
-        if (audioRef.current) {
-          audioSyncRef.current = new AudioSync(audioRef.current, socket);
+        // Initialize audio sync for speaker output (guard against duplicates)
+        if (audioRef.current && !audioSyncRef.current) {
+          audioSyncRef.current = new AudioSync(audioRef.current, socket, { clockOffsetMs: clockOffsetRef.current });
         }
       }
     });
@@ -395,10 +486,10 @@ const startCameraStreaming = async () => {
 
       console.log('Found cameras:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
 
-      // Get stream from each camera with fallbacks
+      // Get stream from each camera with fallbacks.
+      // Only the ACTIVE camera's track is sent over WebRTC (switched via replaceTrack);
+      // the rest are kept live locally so switching is instant.
       const cameraStreams = {};
-      const combinedStream = new MediaStream();
-      let audioTrack = null;
       let gotVideoFromIndividual = false;
 
       // Release initial stream - we'll try individual cameras
@@ -421,7 +512,6 @@ const startCameraStreaming = async () => {
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
             videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
-            combinedStream.addTrack(videoTrack);
             cameraStreams[device.deviceId] = stream;
             gotVideoFromIndividual = true;
           }
@@ -436,7 +526,6 @@ const startCameraStreaming = async () => {
             const videoTrack = stream.getVideoTracks()[0];
             if (videoTrack) {
               videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
-              combinedStream.addTrack(videoTrack);
               cameraStreams[device.deviceId] = stream;
               gotVideoFromIndividual = true;
             }
@@ -455,7 +544,6 @@ const startCameraStreaming = async () => {
           });
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
-            combinedStream.addTrack(videoTrack);
             cameraStreams['default'] = stream;
             gotVideoFromIndividual = true;
           }
@@ -464,27 +552,28 @@ const startCameraStreaming = async () => {
         }
       }
 
-      // Also get audio track once
+      if (!gotVideoFromIndividual) {
+        setError('No camera streams available');
+        return;
+      }
+
+      // Microphone lives in its own stream so it survives camera switches
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
+      }
+      let micTrack = null;
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
           video: false
         });
-        audioTrack = audioStream.getAudioTracks()[0];
-        if (audioTrack) {
-          combinedStream.addTrack(audioTrack);
-        }
+        micStreamRef.current = audioStream;
+        micTrack = audioStream.getAudioTracks()[0] || null;
       } catch (err) {
         console.warn('Failed to get audio:', err);
       }
 
-      if (combinedStream.getVideoTracks().length === 0) {
-        setError('No camera streams available');
-        return;
-      }
-
       setAllCameraStreams(cameraStreams);
-      streamRef.current = combinedStream;
 
       // Update available cameras list
       const camList = videoDevices.map(d => ({
@@ -493,22 +582,28 @@ const startCameraStreaming = async () => {
       }));
       setAvailableCameras(camList);
 
-      const firstCamId = camList[0]?.id;
-      if (firstCamId) {
-        setActiveCameraId(firstCamId);
-      }
+      // Active camera = first available (or 'default' fallback)
+      const firstCamId = camList[0]?.id || Object.keys(cameraStreams)[0];
+      setActiveCameraId(firstCamId);
+      const activeTrack = cameraStreams[firstCamId]?.getVideoTracks()[0] || null;
 
-      // Set local preview to first camera
-      if (videoRef.current) {
-        videoRef.current.srcObject = combinedStream;
+      // Outgoing stream: exactly one video track (+ mic) so host-side switching is real
+      const outgoingStream = new MediaStream();
+      if (activeTrack) outgoingStream.addTrack(activeTrack);
+      if (micTrack) outgoingStream.addTrack(micTrack);
+      streamRef.current = outgoingStream;
+
+      // Set local preview to the active camera only
+      if (videoRef.current && activeTrack) {
+        videoRef.current.srcObject = new MediaStream([activeTrack]);
         videoRef.current.play().catch(() => {});
       }
 
       // Use PeerConnectionManager for WebRTC (fixes CR-02)
       const pc = new PeerConnectionManager(socket, 'host', true);
-      await pc.addLocalStream(combinedStream);
+      pc.addLocalStream(outgoingStream);
 
-      const sentTracks = combinedStream.getTracks();
+      const sentTracks = outgoingStream.getTracks();
       console.log('Sending tracks:', sentTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
 
       pc.onConnectionStateChange = (state) => {
@@ -516,7 +611,8 @@ const startCameraStreaming = async () => {
         if (state === 'failed') {
           console.warn('Camera WebRTC connection failed, attempting restart...');
           setTimeout(() => {
-            if (isJoined && role === 'camera') {
+            // FIXED: was gated on role === 'camera' which is never true for the combined 'device' role
+            if (isJoined) {
               startCameraStreaming();
             }
           }, 3000);
@@ -580,6 +676,11 @@ const startCameraStreaming = async () => {
     });
     setAllCameraStreams({});
 
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(track => track.stop());
+      micStreamRef.current = null;
+    }
+
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => track.stop());
       streamRef.current = null;
@@ -599,11 +700,52 @@ const startCameraStreaming = async () => {
     setActiveCameraId(null);
   };
 
+  // REAL switch: hot-swap the video track on the live RTCPeerConnection sender
+  // so the host sees the new camera without renegotiation
   const switchToCamera = (cameraId) => {
     if (!cameraId || !socket || !deviceIdRef.current) return;
-    console.log('Switching active camera to:', cameraId);
-    setActiveCameraId(cameraId);
-    socket.emit('camera-switched', { cameraId });
+
+    const nextStream = allCameraStreams[cameraId];
+    const nextTrack = nextStream && nextStream.getVideoTracks()[0];
+    const manager = peerConnectionRef.current;
+    const pc = manager && manager.pc;
+
+    if (!nextTrack || !pc || manager._closed) {
+      console.warn('Cannot switch camera: track or peer connection unavailable');
+      return;
+    }
+
+    const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    if (!videoSender) {
+      console.warn('Cannot switch camera: no video sender (negotiation may still be in progress)');
+      return;
+    }
+
+    videoSender.replaceTrack(nextTrack).then(() => {
+      setActiveCameraId(cameraId);
+
+      // Preview mirrors what is actually being sent
+      if (videoRef.current) {
+        videoRef.current.srcObject = new MediaStream([nextTrack]);
+        videoRef.current.play().catch(() => {});
+      }
+
+      // Keep the outgoing/recording stream pointing at the new track
+      if (streamRef.current) {
+        const oldTrack = streamRef.current.getVideoTracks()[0];
+        if (oldTrack && oldTrack !== nextTrack) {
+          streamRef.current.removeTrack(oldTrack);
+        }
+        if (!streamRef.current.getVideoTracks().includes(nextTrack)) {
+          streamRef.current.addTrack(nextTrack);
+        }
+      }
+
+      socket.emit('camera-switched', { cameraId });
+      console.log('Switched active camera to:', cameraId);
+    }).catch(err => {
+      console.error('replaceTrack failed:', err);
+    });
   };
 
   const changeCameraQuality = async (quality) => {
@@ -728,18 +870,24 @@ const startCameraStreaming = async () => {
       
       const recorder = new MediaRecorder(streamRef.current, { mimeType, videoBitsPerSecond: 5000000 });
       mediaRecorderRef.current = recorder;
+      const chunks = []; // FIXED: closure-local buffer; the state array captured here was always empty at onstop
       setRecordedChunks([]);
       setRecordingTime(0);
-      
+
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
+          chunks.push(e.data);
           setRecordedChunks(prev => [...prev, e.data]);
         }
       };
-      
+
       recorder.onstop = async () => {
-        const blob = new Blob(recordedChunks, { type: mimeType });
-        await saveRecording(blob, { mimeType });
+        const blob = new Blob(chunks, { type: mimeType });
+        if (blob.size > 0) {
+          await saveRecording(blob, { mimeType }).catch(err =>
+            console.error('Failed to save recording:', err)
+          );
+        }
         setRecordedChunks([]);
       };
       
@@ -969,7 +1117,26 @@ const startCameraStreaming = async () => {
           </div>
         </header>
 
-        {role === 'speaker' && (
+        {/* Push-to-talk: banner + audio sink for the host's live mic stream */}
+        {hostTalking && (
+          <div
+            className="ptt-banner"
+            style={{
+              display: 'flex', alignItems: 'center', gap: '0.5rem',
+              padding: '0.5rem 0.9rem', borderRadius: '10px',
+              background: 'rgba(255, 64, 129, 0.12)', border: '1px solid rgba(255, 64, 129, 0.45)',
+              color: '#ff4081', fontWeight: 700, fontSize: '0.78rem', letterSpacing: '0.08em',
+            }}
+          >
+            <span className="live-dot"></span>
+            HOST IS TALKING TO YOUR DEVICE
+          </div>
+        )}
+        <audio ref={hostAudioRef} autoPlay />
+
+        {/* FIXED: was role === 'speaker' which never matches the combined 'device' role,
+            so the audio element (and thus AudioSync) could never mount */}
+        {isSpeakerEnabled && (
           <div className="speaker-view">
             <div className="audio-status">
               {isPlaying ? (

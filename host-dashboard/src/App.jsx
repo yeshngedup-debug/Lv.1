@@ -10,8 +10,11 @@ import {
 } from 'lucide-react';
 import { PeerConnectionManager } from './webrtc';
 import { GridlineShell } from './components/GridlineShell';
-import { Equalizer } from './components/Equalizer';
 import { AudioBroadcast } from './components/audio/AudioBroadcast';
+// FIXED: CameraFeedTile and DeviceCard were rendered but never imported,
+// causing ReferenceError (white screen) as soon as any device joined
+import { CameraFeedTile } from './components/camera/CameraFeedTile';
+import { DeviceCard } from './components/device/DeviceCard';
 import { formatTime, formatFileSize } from './utils/audioUtils';
 import './App.css';
 
@@ -42,15 +45,25 @@ function App() {
   const [listeningDevices, setListeningDevices] = useState(() => new Set());
   const [localVolumes, setLocalVolumes] = useState({});
 
-  const audioRef = useRef(null);
-  const mediaStreamRef = useRef(null);
-  const audioContextRef = useRef(null);
-  const sourceRef = useRef(null);
+  // Audio broadcast upload state
+  const [uploading, setUploading] = useState(false);
+  const [uploadedTrack, setUploadedTrack] = useState(null); // { id, name } on the server
+
+  const audioRef = useRef(null);            // hidden <audio> for local host monitoring
+  const hostTokenRef = useRef(null);        // authorizes privileged HTTP routes (upload)
+  const mediaStreamRef = useRef(null);      // host mic during push-to-talk
+  const pttPeersRef = useRef(new Map());    // deviceId -> PeerConnectionManager (PTT)
   const listeningSetRef = useRef(new Set());
   const volumesMapRef = useRef({});
   const peerConnectionsRef = useRef(new Map());
   const videoElementsRef = useRef(new Map());
   const reconnectTimeoutRef = useRef(null);
+
+  // Stable mirror of devices for callbacks that must not go stale
+  const devicesRef = useRef(devices);
+  useEffect(() => {
+    devicesRef.current = devices;
+  }, [devices]);
 
   const connectSocket = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -81,10 +94,16 @@ function App() {
             setDevices([]);
             setJoinUrl('');
           } else {
+            if (response.hostToken) hostTokenRef.current = response.hostToken;
             setDevices(response.devices || []);
-            setIsPlaying(response.isPlaying || false);
-            setCurrentTrack(response.currentTrack || null);
-            setPlaybackPosition(response.playbackPosition || 0);
+            // After a refresh the local File/blob is gone, so the host cannot
+            // monitor or restart playback until the track is re-selected.
+            // Show the server-side state, but keep controls in the paused state.
+            setIsPlaying(false);
+            setCurrentTrack(response.playback?.trackName
+              ? { trackName: response.playback.trackName }
+              : null);
+            setPlaybackPosition(0);
           }
         });
       }
@@ -248,6 +267,12 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       setJoinUrl('');
       setIsPlaying(false);
       setCurrentTrack(null);
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
+      pttPeersRef.current.forEach(pc => pc.close());
+      pttPeersRef.current.clear();
       peerConnectionsRef.current.forEach(pc => pc.close());
       peerConnectionsRef.current.clear();
       videoElementsRef.current.clear();
@@ -289,6 +314,16 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       socket.off('playback-resumed');
       socket.off('playback-seeked');
       socket.off('volume-changed');
+      // Per-peer PTT answer handlers + mic teardown
+      pttPeersRef.current.forEach(pc => {
+        if (pc._pttAnswerHandler) socket.off('ptt-answer', pc._pttAnswerHandler);
+        pc.close();
+      });
+      pttPeersRef.current.clear();
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
       peerConnectionsRef.current.forEach(pc => pc.close());
       peerConnectionsRef.current.clear();
       videoElementsRef.current.clear();
@@ -306,6 +341,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       }
       setSessionId(response.sessionId);
       setJoinUrl(response.joinUrl);
+      if (response.hostToken) hostTokenRef.current = response.hostToken;
     });
   };
 
@@ -323,48 +359,140 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       return;
     }
 
+    if (!socket || !sessionIdRef.current) {
+      setError('Not connected to a session');
+      return;
+    }
+
     setError(null);
     setAudioFile(file);
+    setUploadedTrack(null);
     const url = URL.createObjectURL(file);
     setAudioUrl(url);
+
+    // Upload immediately so participants can fetch the real bytes over HTTP.
+    // A blob: URL only exists inside this browser and is useless to the fleet.
+    setUploading(true);
+    fetch(`/api/sessions/${sessionIdRef.current}/upload?name=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type,
+        ...(hostTokenRef.current ? { 'X-Host-Token': hostTokenRef.current } : {}),
+      },
+      body: file,
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+        setUploadedTrack({ id: data.trackId, name: data.trackName });
+      })
+      .catch((err) => {
+        console.error('Track upload failed:', err);
+        setError(`Upload failed: ${err.message}`);
+        setAudioFile(null);
+        setAudioUrl(null);
+      })
+      .finally(() => setUploading(false));
   };
 
-  const startPlayback = () => {
-    if (!socket || !audioUrl || !audioFile) return;
+  const startPlayback = async () => {
+    if (!socket || !uploadedTrack) return;
     setError(null);
 
-    socket.emit('start-playing', {
-      trackUrl: audioUrl,
-      trackName: audioFile.name,
-      duration: audioRef.current?.duration || 0
-    });
+    // Local monitoring plays instantly; the server broadcast syncs the fleet
+    const el = audioRef.current;
+    if (el && audioUrl) {
+      el.currentTime = 0;
+      try {
+        await el.play();
+      } catch (err) {
+        console.warn('Local monitor playback blocked:', err);
+      }
+    }
 
+    socket.emit('start-playing', {
+      trackId: uploadedTrack.id,
+      duration: audioRef.current && Number.isFinite(audioRef.current.duration) ? audioRef.current.duration : 0,
+    });
     setIsPlaying(true);
   };
 
   const pausePlayback = () => {
-    if (!socket) return;
+    if (!socket || !uploadedTrack) return;
+    if (audioRef.current) audioRef.current.pause();
     socket.emit('pause-playing');
     setIsPlaying(false);
   };
 
   const resumePlayback = () => {
-    if (!socket) return;
+    if (!socket || !uploadedTrack) return;
+    if (audioRef.current && audioUrl) {
+      audioRef.current.play().catch(err => console.warn('Local monitor playback blocked:', err));
+    }
     socket.emit('resume-playing');
     setIsPlaying(true);
   };
 
   const handleSeek = (e) => {
     const position = parseFloat(e.target.value);
+    if (!Number.isFinite(position)) return;
     setPlaybackPosition(position);
-    if (socket) {
+    const el = audioRef.current;
+    if (el && Number.isFinite(el.duration)) {
+      el.currentTime = Math.max(0, Math.min(position, el.duration));
+    }
+    if (socket && uploadedTrack) {
       socket.emit('seek-playing', { position });
     }
   };
 
+  const handleTrackEnded = () => {
+    setIsPlaying(false);
+    if (socket && uploadedTrack) {
+      socket.emit('track-ended');
+    }
+  };
+
+  // ===== Push-to-talk: WebRTC mic broadcast to every connected device =====
+
+  const closePttPeer = useCallback((pc) => {
+    if (pc && pc._pttAnswerHandler && socket) {
+      socket.off('ptt-answer', pc._pttAnswerHandler);
+    }
+    if (pc) pc.close();
+  }, [socket]);
+
+  const offerPttToDevice = async (deviceId, micStream) => {
+    const existing = pttPeersRef.current.get(deviceId);
+    if (existing) {
+      closePttPeer(existing);
+      pttPeersRef.current.delete(deviceId);
+    }
+
+    const pc = new PeerConnectionManager(socket, deviceId, true, { iceEventName: 'ptt-ice-candidate' });
+    pc.addLocalStream(micStream);
+
+    const offer = await pc.createOffer();
+    if (!offer || pc._closed) {
+      closePttPeer(pc);
+      return;
+    }
+    socket.emit('ptt-offer', { deviceId, offer });
+
+    const handler = ({ deviceId: fromId, answer }) => {
+      if (fromId !== deviceId) return;
+      pc.handleAnswer(answer).catch(err => console.error(`PTT answer failed for ${deviceId}:`, err));
+    };
+    pc._pttAnswerHandler = handler;
+    socket.on('ptt-answer', handler);
+
+    pttPeersRef.current.set(deviceId, pc);
+  };
+
   const startPushToTalk = async () => {
+    if (!socket) return;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ 
+      const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
           noiseSuppression: true,
@@ -372,14 +500,19 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
         }
       });
       mediaStreamRef.current = stream;
-      audioContextRef.current = new AudioContext();
-      sourceRef.current = audioContextRef.current.createMediaStreamSource(stream);
-      sourceRef.current.connect(audioContextRef.current.destination);
+      socket.emit('push-to-talk-start');
+
+      // Offer the mic to every currently-connected device.
+      // Devices joining mid-talk will not receive it until the next press.
+      for (const device of devicesRef.current) {
+        try {
+          await offerPttToDevice(device.id, stream);
+        } catch (err) {
+          console.error(`PTT setup failed for ${device.id}:`, err);
+        }
+      }
 
       setIsTalking(true);
-      if (socket) {
-        socket.emit('push-to-talk-start');
-      }
     } catch (err) {
       console.error('Error accessing microphone:', err);
       setError('Could not access microphone. Please ensure microphone permissions are granted.');
@@ -391,11 +524,9 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       mediaStreamRef.current.getTracks().forEach(track => track.stop());
       mediaStreamRef.current = null;
     }
-    if (audioContextRef.current) {
-      audioContextRef.current.close();
-      audioContextRef.current = null;
-    }
-    sourceRef.current = null;
+
+    pttPeersRef.current.forEach(pc => closePttPeer(pc));
+    pttPeersRef.current.clear();
 
     setIsTalking(false);
     if (socket) {
@@ -410,12 +541,17 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
   const endSession = () => {
     if (!socket) return;
+    stopPushToTalk();
     socket.emit('end-session');
     setSessionId(null);
     setDevices([]);
     setJoinUrl('');
     setIsPlaying(false);
     setCurrentTrack(null);
+    setUploadedTrack(null);
+    setDuration(0);
+    setPlaybackPosition(0);
+    if (audioRef.current) audioRef.current.pause();
     peerConnectionsRef.current.forEach(pc => pc.close());
     peerConnectionsRef.current.clear();
     videoElementsRef.current.clear();
@@ -448,7 +584,6 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
   const [ptzState, setPtzState] = useState({ pan: 0, tilt: 0, zoom: 1 });
   const [motionAlerts, setMotionAlerts] = useState({});
   const [motionDetectionEnabled, setMotionDetectionEnabled] = useState(true);
-  const multiCamVideoRefs = useRef({});
   const statsIntervalRef = useRef(null);
   const motionCanvasRefs = useRef({});
 
@@ -633,36 +768,16 @@ const cameras = camEntry.cameras || [];
           </header>
 
           <div className="fullscreen-video-wrapper">
-            {cameras.length === 1 ? (
-              // Single camera - show large
-              <video
-                ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
-                autoPlay
-                playsInline
-                muted
-                className="fullscreen-video"
-              />
-            ) : (
-              // Multiple cameras - show grid
-              <div className="multi-camera-grid">
-                {cameras.map((cam, idx) => (
-                  <div key={cam.id || idx} className="multi-cam-tile">
-                    <video
-                      ref={(el) => {
-                        const trackKey = `${fullscreenDevice.id}-${cam.id}-fullscreen`;
-                        multiCamVideoRefs.current[trackKey] = el;
-                        registerVideoElement(trackKey, el, 'fullscreen');
-                      }}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="multi-cam-video"
-                    />
-                    <div className="multi-cam-label">{cam.label || `Camera ${idx + 1}`}</div>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* Single live feed: the device sends exactly one video track and
+                switches cameras via replaceTrack, so one element is the truth.
+                The old "multi-camera grid" rendered N copies of the same stream. */}
+            <video
+              ref={(el) => registerVideoElement(fullscreenDevice.id, el, 'fullscreen')}
+              autoPlay
+              playsInline
+              muted
+              className="fullscreen-video"
+            />
 
             <div className="fullscreen-overlay">
               <div className="fullscreen-controls">
@@ -704,7 +819,8 @@ const cameras = camEntry.cameras || [];
                         const quality = e.target.value;
                         setCurrentQuality(quality);
                         if (socket) {
-                          socket.emit('request-quality', { quality });
+                          // FIXED: deviceId was missing so the server relay could not route to the device
+                          socket.emit('request-quality', { deviceId: fullscreenDevice.id, quality });
                         }
                       }}
                       className="quality-select"
@@ -837,6 +953,16 @@ const cameras = camEntry.cameras || [];
       {error && <div className="error-banner" onClick={() => setError(null)}>{error} (click to dismiss)</div>}
       {renderFullscreenModal()}
 
+      {/* Hidden local monitor player: host hears the track; duration/position feed the UI */}
+      <audio
+        ref={audioRef}
+        src={audioUrl || undefined}
+        preload="metadata"
+        onLoadedMetadata={(e) => setDuration(e.currentTarget.duration || 0)}
+        onTimeUpdate={(e) => { if (isPlaying) setPlaybackPosition(e.currentTarget.currentTime); }}
+        onEnded={handleTrackEnded}
+      />
+
       <div className="gridline-dashboard-grid">
         {activePage === 'overview' && (
           <>
@@ -939,6 +1065,8 @@ const cameras = camEntry.cameras || [];
             isTalking={isTalking}
             playbackPosition={playbackPosition}
             duration={duration}
+            uploading={uploading}
+            uploadedTrack={uploadedTrack}
             handleFileChange={handleFileChange}
             handleSeek={handleSeek}
             startPlayback={startPlayback}

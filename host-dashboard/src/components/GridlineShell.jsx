@@ -3,24 +3,17 @@ import {
   LayoutDashboard,
   Radio,
   Video,
-  Speaker,
-  Settings,
+  Music,
+  Users,
   Activity,
   ShieldCheck,
-  Zap,
+  Wifi,
   Copy,
   Check,
   Power,
   ChevronLeft,
   ChevronRight,
-  Sparkles,
-  Layers,
-  Music,
-  Users,
-  Wifi,
-  Monitor,
-  Mic,
-  Volume2
+  Zap
 } from 'lucide-react';
 
 export function GridlineShell({
@@ -70,15 +63,15 @@ export function GridlineShell({
           <span className="status-divider" aria-hidden="true">/</span>
           <span className="status-text">SIGNALING: WEBSOCKET</span>
           <span className="status-divider" aria-hidden="true">/</span>
-          <span className="status-text">WEBRTC P2P / STUN ACTIVE</span>
+          <span className="status-text">MEDIA: WEBRTC P2P</span>
         </div>
         <div className="status-strip-right">
-          <span className="status-metric" title="Round-trip latency">
-            <Activity size={12} aria-hidden="true" /> LATENCY: ~12ms
+          <span className="status-metric" title="Devices currently connected">
+            <Activity size={12} aria-hidden="true" /> {devicesCount} DEVICE{devicesCount === 1 ? '' : 'S'}
           </span>
           <span className="status-divider" aria-hidden="true">/</span>
-          <span className="status-metric" title="End-to-end encryption active">
-            <ShieldCheck size={12} aria-hidden="true" /> SECURE ROOM
+          <span className="status-metric" title="WebRTC encrypts all media end-to-end">
+            <ShieldCheck size={12} aria-hidden="true" /> E2E ENCRYPTED
           </span>
         </div>
       </div>
