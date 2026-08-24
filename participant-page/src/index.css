@@ -1,8 +1,12 @@
-/* Iris SYNCD — Gridline Design System v2 */
+@import './fonts.css';
 
-/* Color palette — refined for premium depth */
+/* ============================================================
+   Iris SYNCD — Gridline Design System v2 (Participant PWA)
+   Tokens per DESIGN.md
+   ============================================================ */
+
 :root {
-  /* Surfaces */
+  /* Surfaces — Depth Stack */
   --bg: #0a0a0f;
   --bg-subtle: #14141c;
   --bg-card: rgba(18, 18, 26, 0.92);
@@ -16,14 +20,14 @@
   --border-accent: rgba(139, 92, 246, 0.38);
   --border-focus: rgba(139, 92, 246, 0.55);
 
-  /* Text */
+  /* Text Hierarchy */
   --text-primary: #f4f4f5;
   --text-secondary: #a1a1aa;
   --text-tertiary: #71717a;
   --text-meta: #52525b;
   --text-inverse: #0a0a0f;
 
-  /* Accents — expanded & refined */
+  /* Accent Palette — Semantic */
   --accent-violet: #8b5cf6;
   --accent-violet-light: #a78bfa;
   --accent-violet-soft: #e9d8fd;
@@ -51,74 +55,140 @@
   --radius-xl: 18px;
   --radius-full: 9999px;
 
-  /* Typography scale */
-  --type-scale: 1.2;
-  --font-display: "Unbounded", "Space Grotesk", -apple-system, BlinkMacSystemFont,
-    "Segoe UI", Roboto, sans-serif;
-  --font-ui: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
-    sans-serif;
+  /* Spacing Scale (8px base) */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+
+  /* Typography — Fixed Stack per PRODUCT.md */
+  --font-display: "Unbounded", "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-ui: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-data: "JetBrains Mono", "SF Mono", monospace;
+  /* Local fallbacks */
+  --font-poppins: "Poppins", var(--font-ui);
+  --font-sora: "Sora", var(--font-ui);
 
-  --font-display-size: clamp(2.5rem, 5vw, 4rem);
-  --font-ui-h1: clamp(1.875rem, 4vw, 2.5rem);
-  --font-ui-h2: clamp(1.5rem, 3vw, 2rem);
-  --font-ui-body: 0.9375rem;
-  --font-ui-sm: 0.8125rem;
-  --font-ui-xs: 0.75rem;
+  /* Type Scale (Clamped) */
+  --text-display: clamp(2.5rem, 5vw, 4rem);
+  --text-h1: clamp(1.875rem, 4vw, 2.5rem);
+  --text-h2: clamp(1.5rem, 3vw, 2rem);
+  --text-body: 0.9375rem;
+  --text-sm: 0.8125rem;
+  --text-xs: 0.75rem;
+  --text-meta: 0.75rem;
 
+  /* Motion */
   --speed-fast: 100ms;
   --speed-normal: 200ms;
   --speed-slow: 350ms;
   --ease: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
   --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Gridline Backdrop */
+  --grid-size: 32px;
+  --grid-opacity: 0.02;
 }
 
-/* Color-scheme & base */
+/* ===================== Global Reset ===================== */
 html {
   color-scheme: dark;
+}
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 body {
   min-height: 100vh;
   min-height: 100dvh;
   font-family: var(--font-ui);
   font-feature-settings: "rlig" "calt";
+  font-size: var(--text-body);
+  line-height: 1.55;
+  color: var(--text-primary);
   background:
     linear-gradient(180deg, var(--bg-gradient-start), var(--bg-gradient-end)),
     radial-gradient(ellipse 80% 50% at 30% 20%, rgba(139, 92, 246, 0.08), transparent),
     radial-gradient(ellipse 60% 40% at 70% 80%, rgba(6, 182, 212, 0.07), transparent);
   background-attachment: fixed;
   background-size: cover;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Technical gridline backdrop */
+/* Technical Gridline Backdrop — Fixed Position */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   background-image:
-    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 32px 32px;
+    linear-gradient(to right, rgba(255, 255, 255, var(--grid-opacity)) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, var(--grid-opacity)) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
   pointer-events: none;
   z-index: -1;
 }
 
-/* Focus-visible ring */
+/* ===================== Selection & Focus ===================== */
+::selection {
+  background: rgba(139, 92, 246, 0.4);
+  color: #fff;
+}
 :focus-visible {
   outline: 2px solid var(--border-focus);
   outline-offset: 2px;
 }
 
-/* Reduced motion */
+/* ===================== Reduced Motion ===================== */
 @media (prefers-reduced-motion: reduce) {
   :root {
     --speed-fast: 0ms;
     --speed-normal: 0ms;
     --speed-slow: 0ms;
   }
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     animation-duration: 0ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0ms !important;
+  }
+}
+
+/* ===================== Scrollbar ===================== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-subtle);
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+#root {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* ===================== Safe Area Insets (Mobile PWA) ===================== */
+@supports (padding: env(safe-area-inset-top)) {
+  :root {
+    --safe-top: env(safe-area-inset-top);
+    --safe-bottom: env(safe-area-inset-bottom);
+    --safe-left: env(safe-area-inset-left);
+    --safe-right: env(safe-area-inset-right);
   }
 }

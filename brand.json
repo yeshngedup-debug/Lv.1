@@ -1,0 +1,167 @@
+{
+  "name": "Xceed Studio - Creative Studio in Bhutan",
+  "tagline": "xMenu",
+  "description": "Xceed Studio - We Xceed Xpectations. Discover our creative services in Bhutan, including web design, digital marketing, and more. Contact us today!",
+  "sourceUrl": "https://xceedstudio.com/",
+  "logo": {
+    "primary": "logos/apple-touch-icon-1.png",
+    "alternates": [
+      "logos/favicon-0.ico",
+      "logos/favicon-2.png",
+      "logos/favicon-3.png",
+      "logos/favicon-4.png",
+      "logos/og-image-5.png"
+    ],
+    "notes": ""
+  },
+  "colors": [
+    {
+      "role": "background",
+      "hex": "#ffffff",
+      "oklch": "",
+      "name": "Background",
+      "usage": "page canvas"
+    },
+    {
+      "role": "surface",
+      "hex": "#f5f5f5",
+      "oklch": "",
+      "name": "Surface",
+      "usage": "cards / raised surfaces"
+    },
+    {
+      "role": "foreground",
+      "hex": "#000000",
+      "oklch": "",
+      "name": "Foreground",
+      "usage": "body text"
+    },
+    {
+      "role": "muted",
+      "hex": "#8c8c8c",
+      "oklch": "",
+      "name": "Muted",
+      "usage": "secondary text"
+    },
+    {
+      "role": "border",
+      "hex": "#dbdbdb",
+      "oklch": "",
+      "name": "Border",
+      "usage": "hairlines / dividers"
+    },
+    {
+      "role": "accent",
+      "hex": "#000000",
+      "oklch": "",
+      "name": "Accent",
+      "usage": "primary brand color"
+    },
+    {
+      "role": "accent-secondary",
+      "hex": "#c9f31d",
+      "oklch": "",
+      "name": "Accent secondary",
+      "usage": "secondary brand color / links"
+    }
+  ],
+  "typography": {
+    "display": {
+      "family": "Poppins",
+      "fallbacks": [
+        "system-ui",
+        "-apple-system",
+        "Segoe UI",
+        "Helvetica Neue",
+        "Arial",
+        "sans-serif"
+      ],
+      "weights": [
+        400,
+        700
+      ]
+    },
+    "body": {
+      "family": "Poppins",
+      "fallbacks": [
+        "system-ui",
+        "-apple-system",
+        "Segoe UI",
+        "Helvetica Neue",
+        "Arial",
+        "sans-serif"
+      ],
+      "weights": [
+        400,
+        700
+      ]
+    }
+  },
+  "voice": {
+    "adjectives": [],
+    "tone": "",
+    "messagingPillars": [
+      "xMenu",
+      "01. Our Creative Journey About",
+      "02. Creating lasting impressions. Portfolio"
+    ],
+    "vocabulary": {
+      "use": [],
+      "avoid": []
+    }
+  },
+  "imagery": {
+    "style": "",
+    "subjects": [],
+    "treatment": "",
+    "avoid": [],
+    "samples": [
+      {
+        "file": "imagery/image-0.jpg",
+        "kind": "image",
+        "caption": "Site image 1"
+      },
+      {
+        "file": "imagery/image-1.jpg",
+        "kind": "image",
+        "caption": "Site image 2"
+      },
+      {
+        "file": "imagery/image-2.jpg",
+        "kind": "image",
+        "caption": "Site image 3"
+      },
+      {
+        "file": "imagery/image-3.jpg",
+        "kind": "image",
+        "caption": "Site image 4"
+      },
+      {
+        "file": "imagery/image-4.jpg",
+        "kind": "image",
+        "caption": "Site image 5"
+      },
+      {
+        "file": "imagery/image-5.jpg",
+        "kind": "image",
+        "caption": "Site image 6"
+      },
+      {
+        "file": "imagery/image-6.jpg",
+        "kind": "image",
+        "caption": "Site image 7"
+      },
+      {
+        "file": "imagery/image-7.jpg",
+        "kind": "image",
+        "caption": "Site image 8"
+      }
+    ]
+  },
+  "layout": {
+    "radius": "8px",
+    "borderWeight": "1px",
+    "spacing": "8px baseline grid",
+    "postureRules": []
+  }
+}

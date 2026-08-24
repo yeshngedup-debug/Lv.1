@@ -1,0 +1,165 @@
+{
+  "format": "brand-fonts/1",
+  "files": [
+    {
+      "family": "Poppins",
+      "weight": "100",
+      "style": "normal",
+      "file": "poppins-100.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiGyp8kv8JHgFVrLPTufntAOvWDSHFF.woff2",
+      "bytes": 5296,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "200",
+      "style": "normal",
+      "file": "poppins-200.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLFj_Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5532,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "300",
+      "style": "normal",
+      "file": "poppins-300.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLDz8Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5540,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "400",
+      "style": "normal",
+      "file": "poppins-400.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiEyp8kv8JHgFVrJJnecnFHGPezSQ.woff2",
+      "bytes": 5640,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "500",
+      "style": "normal",
+      "file": "poppins-500.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLGT9Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5496,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "600",
+      "style": "normal",
+      "file": "poppins-600.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLEj6Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5552,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "700",
+      "style": "normal",
+      "file": "poppins-700.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLCz7Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5448,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "800",
+      "style": "normal",
+      "file": "poppins-800.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLDD4Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5484,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Poppins",
+      "weight": "900",
+      "style": "normal",
+      "file": "poppins-900.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/poppins/v24/pxiByp8kv8JHgFVrLBT5Z1JlFd2JQEl8qw.woff2",
+      "bytes": 5364,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "100",
+      "style": "normal",
+      "file": "sora-100.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "200",
+      "style": "normal",
+      "file": "sora-200.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "300",
+      "style": "normal",
+      "file": "sora-300.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "400",
+      "style": "normal",
+      "file": "sora-400.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "500",
+      "style": "normal",
+      "file": "sora-500.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "600",
+      "style": "normal",
+      "file": "sora-600.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    },
+    {
+      "family": "Sora",
+      "weight": "700",
+      "style": "normal",
+      "file": "sora-700.woff2",
+      "format": "woff2",
+      "sourceUrl": "https://fonts.gstatic.com/s/sora/v17/xMQbuFFYT72XzQspDqW1KX7wmA.woff2",
+      "bytes": 15556,
+      "unicodeRange": "U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF"
+    }
+  ]
+}
