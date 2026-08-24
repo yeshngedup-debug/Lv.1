@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   LayoutDashboard,
   Radio,
@@ -16,14 +16,18 @@ import {
   Sparkles,
   Layers,
   Music,
-  Users
+  Users,
+  Wifi,
+  Monitor,
+  Mic,
+  Volume2
 } from 'lucide-react';
 
 export function GridlineShell({
   children,
   sessionId,
-  connectionStatus,
-  reconnecting,
+  connectionStatus = 'disconnected',
+  reconnecting = false,
   devicesCount = 0,
   camerasCount = 0,
   speakersCount = 0,
@@ -36,9 +40,7 @@ export function GridlineShell({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const handleTabClick = (tab) => {
-    if (onTabChange) {
-      onTabChange(tab);
-    }
+    if (onTabChange) onTabChange(tab);
   };
 
   const handleCopyLink = () => {
@@ -48,31 +50,43 @@ export function GridlineShell({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const statusConfig = useMemo(() => ({
+    connected:    { label: 'CONNECTED',    className: 'status-connected',    icon: <ShieldCheck size={12} /> },
+    disconnected: { label: 'DISCONNECTED', className: 'status-disconnected', icon: <Wifi size={12} /> },
+    reconnecting: { label: 'RECONNECTING', className: 'status-reconnecting', icon: <Activity size={12} /> },
+  }), []);
+
+  const currentStatus = statusConfig[connectionStatus] || statusConfig.disconnected;
+
   return (
     <div className="gridline-app">
-      {/* Top Status Strip */}
-      <div className="gridline-status-strip">
+      {/* ===== Top Status Strip ===== */}
+      <div className="gridline-status-strip" role="status" aria-live="polite">
         <div className="status-strip-left">
-          <span className="status-pill status-pill-active">
-            <span className="status-dot-pulse"></span>
-            SYSTEM OPERATIONAL
+          <span className={`status-pill status-pill-active ${currentStatus.className}`}>
+            <span className="status-dot-pulse" aria-hidden="true" />
+            {currentStatus.label}
           </span>
-          <span className="status-divider">/</span>
+          <span className="status-divider" aria-hidden="true">/</span>
           <span className="status-text">SIGNALING: WEBSOCKET</span>
-          <span className="status-divider">/</span>
+          <span className="status-divider" aria-hidden="true">/</span>
           <span className="status-text">WEBRTC P2P / STUN ACTIVE</span>
         </div>
         <div className="status-strip-right">
-          <span className="status-metric"><Activity size={12} /> LATENCY: ~12ms</span>
-          <span className="status-divider">/</span>
-          <span className="status-metric"><ShieldCheck size={12} /> SECURE ROOM</span>
+          <span className="status-metric" title="Round-trip latency">
+            <Activity size={12} aria-hidden="true" /> LATENCY: ~12ms
+          </span>
+          <span className="status-divider" aria-hidden="true">/</span>
+          <span className="status-metric" title="End-to-end encryption active">
+            <ShieldCheck size={12} aria-hidden="true" /> SECURE ROOM
+          </span>
         </div>
       </div>
 
-      {/* Main Gridline Header */}
-      <header className="gridline-header">
+      {/* ===== Main Header ===== */}
+      <header className="gridline-header" role="banner">
         <div className="header-brand">
-          <div className="brand-logo">
+          <div className="brand-logo" aria-hidden="true">
             <Radio size={20} className="brand-logo-icon" />
           </div>
           <div className="brand-titles">
@@ -85,11 +99,16 @@ export function GridlineShell({
           <div className="header-center-panel">
             <div className="session-tag">
               <span className="session-label">SESSION ID</span>
-              <span className="session-value">{sessionId}</span>
+              <span className="session-value" data-session-id>{sessionId}</span>
             </div>
             {joinUrl && (
-              <button onClick={handleCopyLink} className="gridline-btn-ghost btn-sm" title="Copy Invite Link">
-                {copied ? <Check size={14} className="text-green" /> : <Copy size={14} />}
+              <button
+                onClick={handleCopyLink}
+                className="gridline-btn-ghost btn-sm"
+                title="Copy Invite Link"
+                aria-label={copied ? 'Invite link copied' : 'Copy invite link'}
+              >
+                {copied ? <Check size={14} className="text-green" aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
                 <span>{copied ? 'Copied' : 'Invite Link'}</span>
               </button>
             )}
@@ -97,63 +116,80 @@ export function GridlineShell({
         )}
 
         <div className="header-actions">
-          <div className={`connection-pill ${connectionStatus}`}>
-            <span className="pill-dot"></span>
+          <span
+            className={`connection-pill ${currentStatus.className}`}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="pill-dot" aria-hidden="true" />
             <span className="pill-label">
-              {reconnecting ? 'Reconnecting' : connectionStatus.toUpperCase()}
+              {reconnecting ? 'Reconnecting' : currentStatus.label}
             </span>
-          </div>
+          </span>
 
           {sessionId && (
-            <button onClick={onEndSession} className="gridline-btn-danger btn-sm" disabled={reconnecting}>
-              <Power size={14} />
+            <button
+              onClick={onEndSession}
+              className="gridline-btn-danger btn-sm"
+              disabled={reconnecting}
+              aria-label="End session"
+            >
+              <Power size={14} aria-hidden="true" />
               <span>End Session</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* Body Layout with Collapsible Sidebar */}
+      {/* ===== Body Layout ===== */}
       <div className="gridline-body">
         {sessionId && (
-          <aside className={`gridline-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}>
+          <aside
+            className={`gridline-sidebar ${sidebarCollapsed ? 'collapsed' : ''}`}
+            aria-label="Main navigation"
+          >
             <div className="sidebar-toggle-bar">
               <button
                 onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                 className="sidebar-toggle-btn"
-                title={sidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+                aria-label={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-expanded={!sidebarCollapsed}
               >
                 {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
               </button>
             </div>
 
-            <nav className="sidebar-nav">
+            <nav className="sidebar-nav" role="navigation">
               <button
                 className={`nav-item ${activeTab === 'overview' ? 'active' : ''}`}
                 onClick={() => handleTabClick('overview')}
+                aria-current={activeTab === 'overview' ? 'page' : undefined}
               >
-                <LayoutDashboard size={18} />
+                <LayoutDashboard size={18} aria-hidden="true" />
                 {!sidebarCollapsed && <span>Dashboard Overview</span>}
               </button>
               <button
                 className={`nav-item ${activeTab === 'cctv' ? 'active' : ''}`}
                 onClick={() => handleTabClick('cctv')}
+                aria-current={activeTab === 'cctv' ? 'page' : undefined}
               >
-                <Video size={18} />
+                <Video size={18} aria-hidden="true" />
                 {!sidebarCollapsed && <span>CCTV Grid</span>}
               </button>
               <button
                 className={`nav-item ${activeTab === 'audio' ? 'active' : ''}`}
                 onClick={() => handleTabClick('audio')}
+                aria-current={activeTab === 'audio' ? 'page' : undefined}
               >
-                <Music size={18} />
+                <Music size={18} aria-hidden="true" />
                 {!sidebarCollapsed && <span>Audio Broadcast</span>}
               </button>
               <button
                 className={`nav-item ${activeTab === 'fleet' ? 'active' : ''}`}
                 onClick={() => handleTabClick('fleet')}
+                aria-current={activeTab === 'fleet' ? 'page' : undefined}
               >
-                <Users size={18} />
+                <Users size={18} aria-hidden="true" />
                 {!sidebarCollapsed && <span>Device Fleet ({devicesCount})</span>}
               </button>
             </nav>
@@ -161,16 +197,19 @@ export function GridlineShell({
             {!sidebarCollapsed && (
               <div className="sidebar-footer-card">
                 <div className="footer-card-header">
-                  <Zap size={14} className="text-violet" />
+                  <Zap size={14} className="text-violet" aria-hidden="true" />
                   <span>SYNCD HUB v2.0</span>
                 </div>
-                <p className="footer-card-desc">Multi-device sync & camera streaming active.</p>
+                <p className="footer-card-desc">
+                  Multi-device sync & camera streaming active.
+                </p>
               </div>
             )}
           </aside>
         )}
 
-        <main className="gridline-content">
+        {/* ===== Main Content Area ===== */}
+        <main className="gridline-content" role="main">
           {children}
         </main>
       </div>

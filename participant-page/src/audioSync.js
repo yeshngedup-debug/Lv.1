@@ -5,8 +5,12 @@ export class AudioSync {
     this.audioContext = null;
     this.gainNode = null;
     this.isSyncing = false;
-    this.driftThreshold = 0.1; // seconds
+    this.driftThreshold = 0.05; // seconds (tighter threshold)
     this.syncInterval = null;
+    this.lastServerTimestamp = 0;
+    this.lastKnownPosition = 0;
+    this.offsetEstimate = 0;
+    this.offsetSamples = [];
 
     this.init();
   }
@@ -16,32 +20,35 @@ export class AudioSync {
     this.gainNode = this.audioContext.createGain();
     this.gainNode.connect(this.audioContext.destination);
 
-    this.socket.on('playback-started', (data) => {
-      this.handlePlaybackStarted(data);
-    });
+    // Resume AudioContext on first user interaction
+    const resumeAudioContext = () => {
+      if (this.audioContext.state === 'suspended') {
+        this.audioContext.resume();
+      }
+      document.removeEventListener('click', resumeAudioContext);
+      document.removeEventListener('keydown', resumeAudioContext);
+    };
+    document.addEventListener('click', resumeAudioContext);
+    document.addEventListener('keydown', resumeAudioContext);
 
-    this.socket.on('playback-paused', (data) => {
-      this.handlePlaybackPaused(data);
-    });
-
-    this.socket.on('playback-resumed', (data) => {
-      this.handlePlaybackResumed(data);
-    });
-
-    this.socket.on('playback-seeked', (data) => {
-      this.handlePlaybackSeeked(data);
-    });
+    this.socket.on('playback-started', (data) => this.handlePlaybackStarted(data));
+    this.socket.on('playback-paused', (data) => this.handlePlaybackPaused(data));
+    this.socket.on('playback-resumed', (data) => this.handlePlaybackResumed(data));
+    this.socket.on('playback-seeked', (data) => this.handlePlaybackSeeked(data));
   }
 
   handlePlaybackStarted(data) {
     const { trackUrl, serverTimestamp } = data;
+    this.lastServerTimestamp = serverTimestamp;
+    this.lastKnownPosition = 0;
+
     const elapsed = (Date.now() - serverTimestamp) / 1000;
+    this.offsetEstimate = elapsed;
+    this.offsetSamples = [elapsed];
 
     this.audio.src = trackUrl;
-    this.audio.currentTime = elapsed;
-    this.audio.play().catch(err => {
-      console.error('Error playing audio:', err);
-    });
+    this.audio.currentTime = Math.max(0, elapsed);
+    this.audio.play().catch(err => console.error('Error playing audio:', err));
 
     this.startSync();
     this.updateMediaSession();
@@ -54,28 +61,42 @@ export class AudioSync {
 
   handlePlaybackResumed(data) {
     const { serverTimestamp, position } = data;
-    const elapsed = (Date.now() - serverTimestamp) / 1000;
-    this.audio.currentTime = position + elapsed;
+    this.lastServerTimestamp = serverTimestamp;
+    this.lastKnownPosition = position;
 
-    this.audio.play().catch(err => {
-      console.error('Error playing audio:', err);
-    });
+    const elapsed = (Date.now() - serverTimestamp) / 1000;
+    const targetTime = position + elapsed;
+
+    this.audio.currentTime = Math.max(0, targetTime);
+    this.audio.play().catch(err => console.error('Error playing audio:', err));
 
     this.startSync();
   }
 
   handlePlaybackSeeked(data) {
-    const { position, serverTimestamp } = data;
+    const { serverTimestamp, position } = data;
+    this.lastServerTimestamp = serverTimestamp;
+    this.lastKnownPosition = position;
+
     const elapsed = (Date.now() - serverTimestamp) / 1000;
-    this.audio.currentTime = position + elapsed;
+    const targetTime = position + elapsed;
+
+    this.audio.currentTime = Math.max(0, targetTime);
+    // Don't restart sync if already syncing
+    if (!this.isSyncing) {
+      this.startSync();
+    }
   }
 
   startSync() {
-    if (this.syncInterval) return;
+    if (this.isSyncing) return;
+    this.isSyncing = true;
 
-    this.syncInterval = setInterval(() => {
-      this.checkDrift();
-    }, 5000);
+    // High-frequency sync (every 2 seconds) for better drift compensation
+    this.syncInterval = setInterval(() => this.correctDrift(), 2000);
+
+    // Initial correction
+    this.correctDrift();
   }
 
   stopSync() {
@@ -83,53 +104,41 @@ export class AudioSync {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+    this.isSyncing = false;
   }
 
-  checkDrift() {
-    if (!this.audio.paused) {
-      const currentPos = this.audio.currentTime;
-      const expectedPos = this.getExpectedPosition();
-      const drift = Math.abs(currentPos - expectedPos);
+  correctDrift() {
+    if (!this.audio || this.audio.paused || this.audio.ended) return;
 
-      if (drift > this.driftThreshold) {
-        this.correctDrift(expectedPos);
-      }
-    }
-  }
+    const now = Date.now();
+    const elapsed = (now - this.lastServerTimestamp) / 1000;
+    const expectedPosition = this.lastKnownPosition + elapsed;
+    const actualPosition = this.audio.currentTime;
+    const drift = actualPosition - expectedPosition;
 
-  getExpectedPosition() {
-    const lastSyncTime = this.lastSyncTime || 0;
-    const lastSyncPosition = this.lastSyncPosition || 0;
-    const elapsed = (Date.now() - lastSyncTime) / 1000;
-    return lastSyncPosition + elapsed;
-  }
+    // Update offset estimate with exponential smoothing
+    this.offsetSamples.push(elapsed);
+    if (this.offsetSamples.length > 10) this.offsetSamples.shift();
+    this.offsetEstimate = this.offsetSamples.reduce((a, b) => a + b, 0) / this.offsetSamples.length;
 
-  correctDrift(targetPosition) {
-    const diff = targetPosition - this.audio.currentTime;
-
-    if (Math.abs(diff) > 0.5) {
-      this.audio.currentTime = targetPosition;
-    } else {
-      this.audio.playbackRate = 1 + (diff > 0 ? 0.1 : -0.1);
-      setTimeout(() => {
-        this.audio.playbackRate = 1;
-      }, 1000);
-    }
-  }
-
-  setVolume(volume) {
-    if (this.gainNode) {
-      this.gainNode.gain.value = volume;
+    if (Math.abs(drift) > this.driftThreshold) {
+      console.log(`Audio drift detected: ${drift.toFixed(3)}s, correcting...`);
+      this.audio.currentTime = Math.max(0, expectedPosition);
     }
   }
 
   updateMediaSession() {
-    if ('mediaSession' in navigator) {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: 'Iris SYNCD Audio',
-        artist: 'Party Session',
-        album: 'Live Stream'
-      });
+    if (!('mediaSession' in navigator) || !this.audio.src) return;
+
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: 'Synced Playback',
+      artist: 'Iris SYNCD'
+    });
+  }
+
+  setVolume(value) {
+    if (this.gainNode) {
+      this.gainNode.gain.value = Math.max(0, Math.min(1, value));
     }
   }
 
@@ -138,5 +147,9 @@ export class AudioSync {
     if (this.audioContext) {
       this.audioContext.close();
     }
+    this.socket.off('playback-started');
+    this.socket.off('playback-paused');
+    this.socket.off('playback-resumed');
+    this.socket.off('playback-seeked');
   }
 }
