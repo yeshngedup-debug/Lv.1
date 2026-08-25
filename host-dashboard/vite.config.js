@@ -6,7 +6,12 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react({
+    babel: {
+      plugins: [],
+      presets: []
+    }
+  })],
   base: '/',
   resolve: {
     alias: {
