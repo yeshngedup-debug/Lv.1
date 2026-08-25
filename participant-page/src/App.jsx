@@ -517,7 +517,7 @@ const startCameraStreaming = async () => {
 
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
-            videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
+            // videoTrack.label = ... // label is read-only
             cameraStreams[device.deviceId] = stream;
             gotVideoFromIndividual = true;
           }
@@ -531,7 +531,7 @@ const startCameraStreaming = async () => {
             });
             const videoTrack = stream.getVideoTracks()[0];
             if (videoTrack) {
-              videoTrack.label = device.label || `Camera ${device.deviceId.slice(0, 8)}`;
+              // videoTrack.label = ... // label is read-only
               cameraStreams[device.deviceId] = stream;
               gotVideoFromIndividual = true;
             }
