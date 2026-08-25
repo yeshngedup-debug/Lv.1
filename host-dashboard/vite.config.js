@@ -13,6 +13,15 @@ export default defineConfig({
       '@shared': path.resolve(__dirname, '../shared')
     }
   },
+  publicDir: 'public',
+  css: {
+    // Prevent Vite from resolving font URLs in @font-face at build time
+    // Fonts are in public/fonts/ and served as static assets
+    resolve: {
+      // Don't process absolute URLs starting with /fonts/
+      skipUrlResolver: (url) => url.startsWith('/fonts/')
+    }
+  },
   server: {
     port: 5173,
     proxy: {
