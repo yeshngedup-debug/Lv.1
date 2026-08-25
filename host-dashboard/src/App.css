@@ -499,11 +499,19 @@
 .file-info { color: var(--text-secondary); font-family: var(--font-data); }
 
 /* ===================== Metrics ===================== */
-.metrics-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+.metrics-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
 .metric-box {
   display: flex; flex-direction: column; gap: 0.4rem;
-  background: var(--bg-card); border-radius: var(--radius-lg);
-  padding: 1.1rem 1.25rem; border: 1px solid var(--border);
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 .metric-label {
   display: block;
