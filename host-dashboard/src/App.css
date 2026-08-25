@@ -326,9 +326,15 @@
 }
 .gridline-card.empty-state {
   display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: .75rem; padding: 2.5rem 1rem;
-  text-align: center; opacity: .7;
+  justify-content: center; gap: 1rem; padding: 4rem 2rem;
+  text-align: center; color: var(--text-tertiary);
 }
+.empty-icon {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--bg-subtle); display: flex; align-items: center; justify-content: center;
+  color: var(--accent-violet); margin-bottom: 0.5rem;
+}
+.empty-hint { font-size: 0.8rem; opacity: 0.7; }
 .card-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 1rem 1.25rem .75rem; border-bottom: 1px solid var(--border);

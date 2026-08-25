@@ -1278,22 +1278,21 @@ const cameras = camEntry.cameras || [];
 
             {/* Device Fleet */}
             <div className="col-span-8">
-              <div className="gridline-card">
-                <div className="card-header">
-                  <div className="card-title-group">
-                    <Monitor size={18} className="card-title-icon" />
-                    <h3 className="card-title">Connected Device Fleet</h3>
-                  </div>
-                  <span className="card-badge">{devices.length} ONLINE</span>
+              {devices.length === 0 ? (
+                <div className="gridline-card empty-state">
+                  <div className="empty-icon"><Monitor size={28} /></div>
+                  <p style={{ fontWeight: 600 }}>No devices connected yet</p>
+                  <p className="empty-hint">Share the QR code or link to invite participants</p>
                 </div>
-
-                {devices.length === 0 ? (
-                  <div className="empty-state">
-                    <div className="empty-icon"><Monitor size={28} /></div>
-                    <p>No devices connected yet</p>
-                    <p className="empty-hint">Share the QR code or link to invite participants</p>
+              ) : (
+                <div className="gridline-card">
+                  <div className="card-header">
+                    <div className="card-title-group">
+                      <Monitor size={18} className="card-title-icon" />
+                      <h3 className="card-title">Connected Device Fleet</h3>
+                    </div>
+                    <span className="card-badge">{devices.length} ONLINE</span>
                   </div>
-                ) : (
                   <div className="device-fleet-grid">
                     {devices.map(device => (
                       <DeviceCard
