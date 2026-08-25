@@ -1064,7 +1064,7 @@ const cameras = camEntry.cameras || [];
 
                 <div className="qr-flex-wrapper" style={{ padding: '1.25rem' }}>
                   <div className="qr-box">
-                    <QRCodeSVG value={joinUrl} size={152} level="M" />
+                    <QRCodeSVG value={joinUrl} size={160} level="M" />
                   </div>
                   <div className="invite-info-col">
                     <div className="url-input-group">
@@ -1091,18 +1091,20 @@ const cameras = camEntry.cameras || [];
             </div>
 
             <div className="col-span-4">
-              <div className="gridline-card">
+              <div className="gridline-card" style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <div className="card-header">
                   <div className="card-title-group">
                     <Sparkles size={18} className="card-title-icon" />
                     <h3 className="card-title">Getting started</h3>
                   </div>
                 </div>
-                <ol className="guide-steps">
-                  <li>Share the code or QR — guests join as speakers, cameras, or both.</li>
-                  <li>Upload a track under Audio Broadcast and press play for the room.</li>
-                  <li>Watch live feeds appear in the CCTV Grid as cameras come online.</li>
-                </ol>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '1.25rem' }}>
+                  <ol className="guide-steps" style={{ textAlign: 'left' }}>
+                    <li>Share the code or QR — guests join as speakers, cameras, or both.</li>
+                    <li>Upload a track under Audio Broadcast and press play for the room.</li>
+                    <li>Watch live feeds appear in the CCTV Grid as cameras come online.</li>
+                  </ol>
+                </div>
               </div>
             </div>
 
