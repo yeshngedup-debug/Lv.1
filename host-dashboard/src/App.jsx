@@ -1075,11 +1075,11 @@ const cameras = camEntry.cameras || [];
                           setCopiedInvite(true);
                           setTimeout(() => setCopiedInvite(false), 2000);
                         }}
-                        className="gridline-btn-ghost btn-sm"
+                        className="gridline-btn-primary btn-sm"
                         aria-label={copiedInvite ? 'Invite link copied' : 'Copy invite link'}
                       >
-                        {copiedInvite ? <Check size={14} className="text-green" /> : <Copy size={14} />}
-                        <span>{copiedInvite ? 'Copied' : 'Copy'}</span>
+                        {copiedInvite ? <Check size={14} /> : <Copy size={14} />}
+                        <span>{copiedInvite ? 'Copied' : 'Copy Link'}</span>
                       </button>
                     </div>
                     <p className="invite-hint">

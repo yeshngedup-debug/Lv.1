@@ -300,6 +300,18 @@
   box-shadow: 0 0 8px rgba(139,92,246,.6);
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent-violet);
+  outline-offset: 2px;
+}
+button:focus-visible,
+input:focus-visible,
+a:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--accent-violet);
+  outline-offset: 2px;
+}
+
 /* ===================== Dashboard Grid ===================== */
 .gridline-dashboard-grid {
   display: grid; grid-template-columns: repeat(12, 1fr); gap: 1rem;
@@ -309,20 +321,35 @@
 .col-span-8  { grid-column: span 8; }
 .col-span-12 { grid-column: span 12; }
 
+/* Responsive Dashboard Grid */
+@media (max-width: 1200px) {
+  .gridline-dashboard-grid { grid-template-columns: repeat(6, 1fr); }
+  .col-span-4  { grid-column: span 3; }
+  .col-span-8  { grid-column: span 6; }
+  .col-span-12 { grid-column: span 6; }
+}
+@media (max-width: 768px) {
+  .gridline-dashboard-grid { grid-template-columns: 1fr; }
+  .col-span-4,
+  .col-span-8,
+  .col-span-12 { grid-column: span 1; }
+}
+
 /* Cards */
 .gridline-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-  box-shadow: var(--shadow-md);
-  transition: border-color var(--speed-normal) var(--ease), box-shadow var(--speed-normal) var(--ease);
+  box-shadow: var(--shadow-md), 0 0 0 1px rgba(0,0,0,0.1);
+  transition: border-color var(--speed-normal) var(--ease), box-shadow var(--speed-normal) var(--ease), transform var(--speed-fast) var(--ease);
   display: flex; flex-direction: column;
   min-height: 0;
 }
 .gridline-card:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(139,92,246,0.15);
+  transform: translateY(-2px);
 }
 .gridline-card.empty-state {
   display: flex; flex-direction: column; align-items: center;
