@@ -5,6 +5,7 @@
 **Tagline:** Sync music & cameras across every device at the party
 **Platform:** Web (React + Vite) — Host desktop app + Participant mobile PWA
 **Architecture:** Node/Socket.io signaling + WebRTC P2P mesh for ultra-low-latency sync
+**Status:** Production-ready (deployed on Render)
 
 ## Roles & Workflows
 
@@ -33,16 +34,39 @@
 5. **No accounts** — ephemeral sessions, QR codes, peer IDs only
 
 ## Constraints & Non-Negotiables
-- **Dark technical aesthetic** — Gridline system (32px hairline grid, violet/cyan/magenta accents)
-- **Space Grotesk + JetBrains Mono + Unbounded** — font stack is fixed
-- **No external UI kits** — all components custom, CSS-first
-- **AA accessibility** — focus rings, contrast, reduced motion, ARIA labels
-- **Class-name contract** — existing React className strings must remain functional
-- **Mobile-first participant** — thumb-reach, safe-area insets, no layout shift on keyboard
-- **Desktop density** — host packs high info density without clutter
+- **Dark mode only** — `#0a0a0f` base, no light theme
+- **Zero dependencies on heavy frameworks** — React + Vite + Socket.IO + WebRTC only
+- **Mobile-first** — participant page targets phones in portrait
+- **Privacy** — no analytics, no tracking, no persistent user data
+- **Accessibility** — WCAG AA, focus-visible rings, semantic HTML, ARIA labels
 
-## Success Signals
-- Host creates session → participant joins via QR → audio + video sync in <3s
-- 10+ concurrent devices stable on consumer Wi-Fi
-- Zero perceptible audio drift over 60min playback
-- PWA installs and works offline for join page
+## Technical Specs
+| Layer | Stack |
+|---|---|
+| Signaling | Socket.IO v4 (WS + polling) |
+| Media | WebRTC (RTCPeerConnection, DTLS-SRTP) |
+| NAT Traversal | STUN (Google/Twilio) + TURN (metered.ca) |
+| Transport | HTTP/1.1 + WebSocket, HTTPS in prod |
+| State | In-memory Map + optional Redis (horizontal scaling) |
+| Audio sync | Server clock offset (median of 5 RTT samples), drift correction every 2s |
+| Video switching | `RTCRtpSender.replaceTrack()` — no SDP renegotiation |
+| Push-to-talk | Dedicated audio-only PC per device |
+| Recording | MediaRecorder → IndexedDB → POST to host |
+
+## Production Hardening (v1.1.0+)
+- ✅ **TURN support** — configurable via `VITE_TURN_*` env vars
+- ✅ **ICE restart** — auto on `failed`/`disconnected` state
+- ✅ **Rate limiting** — per-IP (Redis) + per-session (in-memory)
+- ✅ **Security headers** — COOP/COEP/CSP for WebRTC isolation
+- ✅ **CORS lockdown** — explicit allowlist in production
+- ✅ **Graceful shutdown** — SIGTERM/SIGINT drain (30s force timeout)
+- ✅ **Observability** — Sentry errors + Prometheus metrics
+- ✅ **Health checks** — `/api/health`, `/api/metrics`
+
+## Roadmap (Post-v1.1)
+- [ ] Background sync for offline camera offers
+- [ ] S3 + CDN for track uploads (replace local disk)
+- [ ] Load testing (k6, 50+ concurrent peers)
+- [ ] E2E Playwright tests (fake media stream)
+- [ ] Multi-region signaling (Render paid tier + sticky sessions)
+- [ ] PTZ motor control via data channels

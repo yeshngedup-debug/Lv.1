@@ -1,82 +1,41 @@
-# coturn (STUN/TURN) Server Configuration for Iris SYNCD
+# TURN/STUN Server Configuration for Iris SYNCD
 
 ## Overview
-coturn provides STUN/TURN services for NAT traversal, allowing devices on different networks to connect via WebRTC.
+Iris SYNCD uses **raw WebRTC P2P** with Socket.IO signaling — **no SFU (LiveKit/Mediasoup) is used**.  
+NAT traversal is handled by standard STUN + TURN servers configured via environment variables.
 
-## Installation
-
-### Ubuntu/Debian
-```bash
-sudo apt update
-sudo apt install coturn
+## Current Architecture
+```
+Participant (React PWA) ◄── socket.io ──► Signaling Server (Node.js) ◄── socket.io ──► Host Dashboard (React)
+        │                                                                    │
+        └────────────────────── WebRTC P2P (DTLS-SRTP) ──────────────────────┘
+                          ▲          ▲
+                          │          │
+                     STUN (Google) TURN (metered.ca / coturn)
 ```
 
-### Docker
-```bash
-docker run -d \
-  --name=turnserver \
-  -p 3478:3478 \
-  -p 3478:3478/udp \
-  -p 5349:5349 \
-  -p 5349:5349/udp \
-  -p 49152-49200:49152-49200/udp \
-  -e TURN_USERNAME=iris \
-  -e TURN_PASSWORD=syncd \
-  -e TURN_REALM=iris-syncd \
-  coturn/coturn
-```
+## Production TURN (metered.ca)
 
-### macOS (Homebrew)
-```bash
-brew install coturn
-```
-
-## Configuration
-
-### 1. Basic Configuration (`/etc/turnserver.conf`)
+1. Create account at [metered.ca](https://metered.ca) — free tier: 1000 min/mo
+2. Create a project → note credentials
+3. Add to Render environment variables:
 
 ```bash
-# Network settings
-listening-port=3478
-tls-listening-port=5349
-
-# Enable STUN and TURN
-stun-only=false
-no-stun=false
-
-# Authentication
-realm=iris-syncd
-lt-cred-mech
-user=iris:syncd
-
-# Logging
-log-file=/var/log/turnserver.log
-verbose
-
-# Security
-no-multicast-peers
-no-cli
-
-# Performance
-proc-user=turnserver
-proc-group=turnserver
-total-quota=100
-stale-nonce=600
-
-# Relay IP range (for Docker/VPS)
-relay-ip=0.0.0.0
-external-ip=YOUR_SERVER_IP/YOUR_PUBLIC_IP
-
-# Allowed relay ports
-min-port=49152
-max-port=49200
+VITE_TURN_URL=turn:global.relay.metered.ca:80
+VITE_TURN_USERNAME=<your_username>
+VITE_TURN_CREDENTIAL=<your_credential>
 ```
 
-### 2. Docker Compose Configuration
+The client (`shared/webrtc/index.js`) reads these at build time via `import.meta.env.VITE_*`.
 
+## Self-Hosted coturn (Alternative)
+
+If you prefer self-hosted TURN (e.g., on a VPS):
+
+### Docker (Recommended)
 ```yaml
+# docker-compose.yml
 version: '3.8'
-
 services:
   turnserver:
     image: coturn/coturn
@@ -91,121 +50,45 @@ services:
       - TURN_USERNAME=iris
       - TURN_PASSWORD=syncd
       - TURN_REALM=iris-syncd
-      - TURN_SERVER_NAME=turn.iris-syncd.local
-      - EXTERNAL_IP=YOUR_SERVER_IP
-      - RELAY_IP=0.0.0.0
+      - EXTERNAL_IP=<your_public_ip>
     restart: unless-stopped
-    network_mode: host  # For proper NAT handling
 ```
 
-### 3. Environment Variables
-
-Add to your `.env` file:
+### Configuration (`turnserver.conf`)
+```conf
+listening-port=3478
+tls-listening-port=5349
+realm=iris-syncd
+lt-cred-mech
+user=iris:syncd
+min-port=49152
+max-port=49200
+external-ip=<YOUR_PUBLIC_IP>
+no-multicast-peers
+no-cli
+log-file=/var/log/turnserver.log
+verbose
 ```
-TURN_URL=turn:YOUR_SERVER_IP:3478
-TURN_USERNAME=iris
-TURN_CREDENTIAL=syncd
-```
 
-## Testing
-
-### Test STUN
+Then set in Render:
 ```bash
-# Install stun utility
-sudo apt install stun
-
-# Test STUN server
-stun YOUR_SERVER_IP:3478
+VITE_TURN_URL=turn:<your_domain_or_ip>:3478
+VITE_TURN_USERNAME=iris
+VITE_TURN_CREDENTIAL=syncd
 ```
 
-### Test TURN
-```bash
-# Using turnutils (comes with coturn)
-turnutils_uclient -u iris -W syncd YOUR_SERVER_IP
-```
+## Verification
+1. Deploy with TURN vars set
+2. Join session from a device behind symmetric NAT (corporate WiFi, cellular)
+3. Verify WebRTC connection succeeds (ICE state → `connected`)
+4. Check browser console for ICE candidate logs showing relay candidates
 
-### WebRTC Test Page
-Visit: https://webrtc.github.io/samples/src/content/peerconnection/trickle-ice/
+## Cost Comparison
+| Option | Cost | Maintenance |
+|---|---|---|
+| metered.ca (free) | $0 / 1000 min | Zero |
+| coturn on VPS | ~$5-10/mo | Medium (OS updates, certs) |
+| Twilio Network Traversal | $0.003/min | Zero |
+| LiveKit Cloud | $0.12/participant-hr | Zero (but adds SFU complexity) |
 
-Configure:
-- STUN/TURN servers: `turn:YOUR_SERVER_IP:3478`
-- Username: `iris`
-- Password: `syncd`
-
-## Production Considerations
-
-### 1. SSL/TLS Configuration
-```bash
-# Generate certificates
-openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
-  -keyout /etc/ssl/private/turn.key \
-  -out /etc/ssl/certs/turn.crt
-
-# Add to turnserver.conf
-cert=/etc/ssl/certs/turn.crt
-pkey=/etc/ssl/private/turn.key
-```
-
-### 2. Firewall Rules
-```bash
-# Allow TURN ports
-sudo ufw allow 3478/tcp
-sudo ufw allow 3478/udp
-sudo ufw allow 5349/tcp
-sudo ufw allow 5349/udp
-sudo ufw allow 49152:49200/udp
-```
-
-### 3. Performance Tuning
-```bash
-# Increase file descriptors
-ulimit -n 10000
-
-# Add to /etc/security/limits.conf
-turnserver soft nofile 10000
-turnserver hard nofile 10000
-```
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Connection refused**
-   - Check if coturn is running: `systemctl status coturn`
-   - Verify ports are open: `netstat -tulpn | grep 3478`
-
-2. **Authentication failed**
-   - Verify username/password in turnserver.conf
-   - Check realm configuration
-
-3. **No relay candidates**
-   - Check external-ip configuration
-   - Verify firewall rules for relay ports
-   - Ensure TURN is not in stun-only mode
-
-4. **High latency**
-   - Check server location relative to clients
-   - Consider using LiveKit's built-in TURN or cloud service
-   - Optimize relay port range
-
-### Logs
-```bash
-# View coturn logs
-sudo tail -f /var/log/turnserver.log
-
-# Check systemd logs
-sudo journalctl -u coturn -f
-```
-
-## Integration with Iris SYNCD
-
-The server configuration uses these environment variables:
-```javascript
-const turnConfig = {
-  urls: process.env.TURN_URL || 'turn:localhost:3478',
-  username: process.env.TURN_USERNAME || 'iris',
-  credential: process.env.TURN_CREDENTIAL || 'syncd'
-};
-```
-
-This is passed to WebRTC peer connections as ICE server configuration.
+**Recommendation:** Start with metered.ca free tier; migrate to self-hosted coturn if volume exceeds free tier.

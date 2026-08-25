@@ -1,128 +1,95 @@
-# LiveKit Configuration for Iris SYNCD
+# Signaling Architecture (Not LiveKit)
 
-## Overview
-This project uses LiveKit as the SFU (Selective Forwarding Unit) for scalable WebRTC media transport. LiveKit handles:
-- Audio/video routing between host and participants
-- Adaptive streaming and quality management
-- Recording capabilities (future feature)
-- Scalability beyond peer-to-peer limitations
+> **Note:** Iris SYNCD **does not use LiveKit**. This document describes the actual signaling implementation.
 
-## Installation Options
+## Architecture: Socket.IO + Raw WebRTC
 
-### Option 1: Docker (Recommended for Development)
-```bash
-# Pull and run LiveKit server
-docker run --rm -p 7880:7880 -p 7881:7881 -p 5349:5349/udp \
-  -e LIVEKIT_API_KEY=your_api_key \
-  -e LIVEKIT_API_SECRET=your_api_secret \
-  livekit/livekit-server
+Iris SYNCD uses a custom signaling layer built on **Socket.IO** with **raw WebRTC P2P** — no SFU/MCU, no LiveKit, no mediasoup.
+
+```
+┌──────────────┐         Socket.IO (WebSocket)          ┌──────────────┐
+│  Host Dash   │ ◄─────────────────────────────────────► │  Participant │
+│  (React)     │                                          │  (PWA)       │
+└──────┬───────┘                                          └──────┬───────┘
+       │                                                       │
+       └────────────────── WebRTC P2P (DTLS-SRTP) ─────────────┘
+                    ▲                           ▲
+                    │                           │
+            STUN: stun.l.google.com:19302   TURN: metered.ca / coturn
 ```
 
-### Option 2: Binary Installation
-```bash
-# Download LiveKit server
-curl -sSL https://get.livekit.io | bash
+## Signaling Events (Socket.IO)
 
-# Run with configuration
-livekit-server --config livekit.yaml --dev
-```
+| Event | Direction | Payload | Purpose |
+|---|---|---|---|
+| `create-session` | Host → Server | `{}` | Create session, get `sessionId`, `joinUrl`, `hostToken` |
+| `rejoin-session` | Host → Server | `{sessionId}` | Reclaim host privileges after reload |
+| `join-session` | Device → Server | `{sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled}` | Join as camera/speaker/both |
+| `camera-offer` | Device → Host | `{deviceId, offer}` | WebRTC offer from participant |
+| `camera-answer` | Host → Device | `{deviceId, answer}` | WebRTC answer from host |
+| `ice-candidate` | Both → Both | `{candidate, fromDeviceId, targetDeviceId}` | ICE candidates (namespaced) |
+| `device-cameras` | Device → Host | `{cameras: []}` | Enumerate available cameras |
+| `camera-switched` | Device → Host | `{cameraId}` | Notify active camera change |
+| `switch-camera` | Host → Device | `{deviceId, cameraId}` | Host requests camera switch |
+| `push-to-talk-offer/answer` | Host ↔ Device | `{deviceId, offer/answer}` | Dedicated audio PC for PTT |
+| `playback-state` | Host → All | `{isPlaying, trackId, position}` | Server-authoritative playback |
 
-### Option 3: Cloud Hosted (Production)
-Use LiveKit Cloud for production deployments:
-- https://livekit.io/cloud
-- Provides managed SFU infrastructure
-- Includes TURN servers and global distribution
-
-## Configuration File
-
-Create `livekit.yaml` in the server directory:
-
-```yaml
-port: 7880
-rtc:
-  port_range_start: 50000
-  port_range_end: 60000
-  tcp_port: 7881
-  use_external_ip: false
-
-keys:
-  your_api_key: your_api_secret
-
-logging:
-  level: info
-  json: false
-
-room:
-  auto_create: true
-  empty_timeout: 300
-  max_participants: 20
-
-turn:
-  enabled: true
-  domain: localhost
-  tls_port: 5349
-  cert_file: ""
-  key_file: ""
-```
-
-## API Integration
-
-The server uses LiveKit's server SDK to generate access tokens:
+## Session State
 
 ```javascript
-import { AccessToken } from 'livekit-server-sdk';
-
-// Generate token for participant
-function generateToken(roomName, participantName, role) {
-  const at = new AccessToken('api_key', 'api_secret', {
-    identity: participantName,
-    name: participantName,
-  });
-
-  at.addGrant({
-    room: roomName,
-    roomJoin: true,
-    canPublish: role === 'camera',
-    canSubscribe: role === 'speaker',
-    canPublishData: true,
-  });
-
-  return at.toJwt();
+class Session {
+  id: string;                    // 8-char uppercase
+  hostSocketId: string;          // Socket.io ID of host
+  hostToken: string;             // UUID, reissued on rejoin
+  devices: Map<deviceId, Device>;
+  playback: {                    // Audio broadcast state
+    trackId: string|null;
+    trackUrl: string|null;
+    trackName: string|null;
+    duration: number;
+    isPlaying: boolean;
+    position: number;
+    startedAt: number|null;
+  };
+  createdAt: number;
+  expiresAt: number;             // Default 1 hour TTL
 }
 ```
 
-## Environment Variables
+## Device Roles
 
-Add to your `.env` file:
-```
-LIVEKIT_API_KEY=your_api_key
-LIVEKIT_API_SECRET=your_api_secret
-LIVEKIT_WS_URL=ws://localhost:7880
-```
+| Role | Camera | Audio Playback | Use Case |
+|---|---|---|---|
+| `camera` | ✅ | ❌ | Phone as dedicated camera |
+| `speaker` | ❌ | ✅ | Phone as dedicated speaker |
+| `device` | ✅ (toggle) | ✅ (toggle) | Single phone doing both |
 
-## Development vs Production
+## Scaling Considerations
 
-### Development
-- Use LiveKit's dev mode (`--dev` flag)
-- Includes built-in TURN server
-- Generates self-signed certificates
+| Concern | Current | Future |
+|---|---|---|
+| Horizontal scaling | Socket.IO Redis adapter (optional) | Sticky sessions required |
+| Session store | In-memory Map + optional Redis | Redis-only with TTL |
+| Media relay | None (P2P) | Consider SFU for >20 peers |
+| Load balancing | Render single instance | Multiple regions + geo-DNS |
 
-### Production
-- Use LiveKit Cloud or self-hosted cluster
-- Configure proper SSL/TLS
-- Set up TURN servers for NAT traversal
-- Enable monitoring and logging
+## Why Not LiveKit / Mediasoup?
 
-## Testing
+| Factor | Decision |
+|---|---|
+| Complexity | Avoided SFU complexity for <20 peer sessions |
+| Cost | Zero infrastructure cost (P2P) |
+| Latency | P2P is lower latency for small meshes |
+| Flexibility | Full control over signaling + ICE logic |
 
-Test the connection:
-```bash
-# Install LiveKit CLI
-npm install -g @livekit/cli
+## Adding an SFU Later
 
-# List rooms
-lk room list
+If peer count grows beyond ~20, migrate to **Mediasoup** or **LiveKit**:
+1. Replace Socket.IO signaling with SFU protocol
+2. Host becomes SFU producer; participants become consumers
+3. `PeerConnectionManager` becomes `ConsumerManager`
+4. Camera switching → `consumer.requestKeyFrame()` or new track
 
-# Create a test room
-lk room create test-room
-```
+---
+
+**TL;DR:** Current stack is Socket.IO signaling + WebRTC P2P. No LiveKit needed for current scale.

@@ -1,7 +1,7 @@
 # Iris SYNCD
 
 Multi-device party AV controller. A host laptop broadcasts a music track and
-talks to the room; phones join by QR code and become **speakers** (lips-synced
+talks to the room; phones join by QR code and become **speakers** (lip-synced
 playback), **cameras** (live video back to the host), or both — all over
 WebRTC, with a Socket.IO signaling server.
 
@@ -32,112 +32,83 @@ WebRTC, with a Socket.IO signaling server.
 ## Repository layout
 
 ```
-server/            Express + Socket.IO signaling, upload API, playback state machine
-host-dashboard/    React host app (Vite)
-participant-page/  React participant PWA (Vite + vite-plugin-pwa)
-shared/webrtc/     PeerConnectionManager used by both frontends
-tests/             Node built-in test-runner suite (no test dependencies)
-render.yaml        Render blueprint
+server/            Express + Socket.IO signaling
+  src/index.js     Single-file server (WebSocket + HTTP + static hosting)
+host-dashboard/    Host control center (React 18 + Vite)
+  src/App.jsx      Main dashboard component
+  src/components/  CameraFeedTile, DeviceCard, AudioBroadcast, GridlineShell
+  src/webrtc.js    Shared WebRTC utilities re-export
+participant-page/  Mobile PWA (React 18 + Vite + Workbox)
+  src/App.jsx      Join flow, camera streaming, audio sync
+  src/webrtc.js    Shared WebRTC utilities re-export
+shared/webrtc/     PeerConnectionManager + ICE/STUN/TURN helpers
+tests/             Node native test suite (signaling + HTTP API)
 ```
 
-## Local development
-
-Requirements: Node 20+ (built-in test runner and `--watch`).
+## Quick start
 
 ```bash
-npm install          # installs all workspaces
-npm run dev          # server :3001 · host :5173 · participant :5174
-npm test             # integration + unit suite (13 tests)
-```
+# Install all workspaces
+npm install
 
-Windows shortcut: `start.cmd` does install + launch of all three.
+# Dev (runs all three workspaces concurrently)
+npm run dev
 
-The Vite dev servers proxy `/socket.io` and `/api` to `localhost:3001`, so the
-apps work out of the box. `BASE_URL` is only needed when participants are on
-other devices on your LAN — set it to your machine's LAN IP:
+# Build production bundles
+npm run build
 
-```bash
-# server/.env
-PORT=3001
-BASE_URL=http://192.168.1.50:3001
+# Run tests
+npm test
+
+# Start production server (serves static builds + API + WebSocket)
+npm start
 ```
 
 ## Environment variables
 
-| Variable | Default | Purpose |
+| Variable | Default | Description |
 |---|---|---|
-| `PORT` | `3001` | HTTP + WebSocket port |
-| `RENDER_EXTERNAL_URL` / `BASE_URL` | `http://localhost:$PORT` | Absolute base for QR/join URLs |
-| `NODE_ENV` | `development` | `production` enables static serving, SPA fallback, strict CSP |
-| `CORS_ORIGIN` | `*` | Comma-separated origin allowlist for prod |
-| `SESSION_TIMEOUT` | `3600000` | Idle session lifetime (ms) |
-| `LOG_LEVEL` | `info` | Winston level |
-| `REDIS_URL` | – | Enables the Socket.IO Redis adapter (horizontal scaling) |
-| `UPLOAD_RATE_LIMIT_MAX` | `30` | Track uploads allowed per 10 min |
-| `RATE_LIMIT_*` | see `server/src/index.js` | General `/api` limiter knobs |
-| `VITE_SOCKET_URL` | same-origin | Frontend override for the signaling server |
-| `VITE_TURN_URL` / `VITE_TURN_USERNAME` / `VITE_TURN_CREDENTIAL` | – | TURN relay for restrictive NATs (both frontends) |
+| `PORT` | `3001` | HTTP/WebSocket port |
+| `BASE_URL` | `http://localhost:3001` | Public base URL for QR codes |
+| `RENDER_EXTERNAL_URL` | (injected) | Render injects this automatically |
+| `CORS_ORIGIN` | `https://iris-syncd.onrender.com` | Comma-separated allowlist |
+| `SESSION_TIMEOUT` | `3600000` | Session TTL (ms) |
+| `LOG_LEVEL` | `info` | Winston log level |
+| `REDIS_URL` | (optional) | Redis connection string for horizontal scaling |
+| `VITE_TURN_URL` | (required for prod) | TURN server URL (e.g., `turn:global.relay.metered.ca:80`) |
+| `VITE_TURN_USERNAME` | (required for prod) | TURN username |
+| `VITE_TURN_CREDENTIAL` | (required for prod) | TURN credential |
+| `SENTRY_DSN` | (optional) | Sentry DSN for error tracking |
 
-> **TURN in production:** without a TURN server, devices behind symmetric NATs
-> may fail to connect. Add Metered/Cloudflare/Xirsys credentials as
-> `VITE_TURN_*` build-time env vars before `npm run build`.
+## Production deployment (Render)
 
-## Testing
+1. Push to GitHub
+2. In Render dashboard: **New +** → **Blueprint** → select this repo
+3. Provision a Redis instance and add its internal URL as `REDIS_URL`
+4. Add TURN credentials from [metered.ca](https://metered.ca) as `VITE_TURN_URL`, `VITE_TURN_USERNAME`, `VITE_TURN_CREDENTIAL`
+5. Add Sentry DSN as `SENTRY_DSN` for error tracking
+6. Deploy — `render.yaml` defines the build/start commands and health checks
 
-```bash
-npm test
-```
+Health check endpoints:
+- `/api/health` — basic liveness
+- `/api/metrics` — Prometheus metrics (`iris_*`)
 
-The suite boots the real server in-process (random port) and covers:
-playback snapshot math (drift/clamping), uploaded-file lifecycle cleanup,
-HTTP validation and auth guards, the full signaling lifecycle (create → join →
-upload → play/seek/pause/resume → role enforcement → teardown), heartbeat-based
-presence, clock sync, and PTT relays. It exits hard if anything hangs, so CI
-can never wedge.
+## WebRTC stack
 
-## Deployment (Render)
+- **Signaling**: Socket.IO (WebSocket + polling fallback)
+- **Media**: Raw WebRTC P2P (`RTCPeerConnection`)
+- **NAT traversal**: STUN (Google/Twilio) + TURN (metered.ca / coturn)
+- **Encryption**: DTLS-SRTP (mandatory, no plaintext)
+- **ICE restart**: Automatic on `failed` / `disconnected` state
+- **Camera switching**: `RTCRtpSender.replaceTrack()` (no renegotiation)
 
-1. Push this repo to GitHub/GitLab.
-2. In Render: **New + → Blueprint**, select the repo — `render.yaml` is picked up.
-3. Set `CORS_ORIGIN` to your final `https://<service>.onrender.com` URL once known.
-4. Deploy. Build runs `npm install && npm run build && npm test`; health checks hit `/api/health`.
+## Observability
 
-Production behavior enabled by `NODE_ENV=production`:
+- **Errors/Traces**: Sentry (`@sentry/node`, `@sentry/react`)
+- **Metrics**: Prometheus (`prom-client`) at `/api/metrics`
+- **Logs**: Winston structured JSON (stdout)
+- **Key metrics**: `iris_active_sessions`, `iris_connected_peers`, `iris_ice_connection_state_total`, `iris_negotiation_duration_seconds`, `iris_http_requests_total`
 
-- Both SPAs are served from their `dist/` folders (`/` = host, `/join/*` = participant).
-- SPA fallback returns the correct `index.html` for deep links — **QR scans work**.
-- Strict Helmet CSP (no inline scripts; Google Fonts allowlisted).
-- Uploaded tracks live on local disk under `uploads/`.
+## License
 
-### Platform notes & limitations
-
-- **Ephemeral disk:** Render free tier wipes local storage on deploys/restarts.
-  Uploaded tracks disappear — hosts simply re-select the file. For durable
-  storage, mount a Render Disk or swap `uploads/` for object storage (S3/R2)
-  in `server/src/index.js`.
-- **Scaling:** one instance works out of the box. Multiple instances need
-  `REDIS_URL` **and** sticky sessions; sessions also live in an in-process Map.
-- **Autoplay policies:** participant audio starts from a user gesture (join
-  button); iOS may still require a tap on lock-screen controls.
-- **Free plan spin-down:** cold starts delay the first QR scan; upgrade or ping
-  `/api/health` on a cron to keep warm.
-
-## Security model
-
-- Session codes are 8-char UUID slices; all session-scoped routes validate the format.
-- Privileged HTTP routes (track upload) require an **X-Host-Token** issued at
-  session create/rejoin and rotated on every host rejoin.
-- All playback control events enforce `role === 'host'` server-side and always ack.
-- Rate limits: general `/api` budget plus a stricter upload budget.
-- Media never touches the server: WebRTC is DTLS-SRTP end-to-end encrypted.
-
-## Maintenance notes
-
-- The signaling protocol lives in three places that must agree:
-  `server/src/index.js`, `host-dashboard/src/App.jsx`,
-  `participant-page/src/App.jsx` (+ `shared/webrtc/index.js`). When adding an
-  event, add a relay handler *and* both client handlers *and* a test.
-- ICE channels are namespaced (`ice-candidate` for cameras,
-  `ptt-ice-candidate` for push-to-talk) so parallel PCs don't cross-contaminate.
-- `workbox-*.js` hashes change per build — never hardcode service-worker asset
-  routes; the `/join` static mount handles them.
+MIT
