@@ -19,13 +19,23 @@ services:
         sync: false
       # Comma-separated allowlist in production, e.g. https://iris-syncd.onrender.com
       - key: CORS_ORIGIN
-        value: '*'
+        value: https://iris-syncd.onrender.com
       - key: SESSION_TIMEOUT
         value: '3600000'       # 1 hour
       - key: LOG_LEVEL
         value: info
       - key: UPLOAD_RATE_LIMIT_MAX
         value: '30'
+      # TURN Server (metered.ca or coturn) - required for WebRTC on symmetric NAT
+      - key: VITE_TURN_URL
+        sync: false
+      - key: VITE_TURN_USERNAME
+        sync: false
+      - key: VITE_TURN_CREDENTIAL
+        sync: false
+      # Observability
+      - key: SENTRY_DSN
+        sync: false
       # Optional: provision a Render Redis instance and paste its internal URL
       # to enable horizontal scaling via the Socket.IO Redis adapter.
       # NOTE: sessions also live in an in-process Map; multi-instance mode

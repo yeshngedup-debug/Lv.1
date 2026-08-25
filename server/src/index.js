@@ -13,8 +13,31 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import fs from 'fs';
 import dotenv from 'dotenv';
 import winston from 'winston';
+import * as Sentry from '@sentry/node';
+import client from 'prom-client';
 
 dotenv.config();
+
+// Initialize Sentry
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || 'development',
+    tracesSampleRate: 0.1,
+    profilesSampleRate: 0.1,
+  });
+}
+
+// Prometheus metrics
+const register = new client.Registry();
+client.collectDefaultMetrics({ register, prefix: 'iris_' });
+
+// Custom metrics
+const activeSessions = new client.Gauge({ name: 'iris_active_sessions', help: 'Number of active sessions', registers: [register] });
+const connectedPeers = new client.Gauge({ name: 'iris_connected_peers', help: 'Number of connected peers', registers: [register] });
+const iceConnectionState = new client.Counter({ name: 'iris_ice_connection_state_total', help: 'ICE connection state changes', labelNames: ['state'], registers: [register] });
+const negotiationDuration = new client.Histogram({ name: 'iris_negotiation_duration_seconds', help: 'WebRTC negotiation duration', buckets: [0.1, 0.5, 1, 2, 5, 10], registers: [register] });
+const httpRequests = new client.Counter({ name: 'iris_http_requests_total', help: 'Total HTTP requests', labelNames: ['method', 'path', 'status'], registers: [register] });
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -213,6 +236,30 @@ app.use((req, res, next) => {
     });
   });
   next();
+});
+
+// Sentry request handler (must be before other middleware)
+if (process.env.SENTRY_DSN) {
+  app.use(Sentry.Handlers.requestHandler());
+}
+
+// HTTP request metrics
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    httpRequests.inc({ method: req.method, path: req.route?.path || req.path, status: res.statusCode });
+  });
+  next();
+});
+
+// Prometheus metrics endpoint
+app.get('/api/metrics', async (req, res) => {
+  try {
+    res.set('Content-Type', register.contentType);
+    res.end(await register.metrics());
+  } catch (ex) {
+    res.status(500).end(ex.message);
+  }
 });
 
 // Serve static files in production.
@@ -1072,6 +1119,11 @@ const staleDeviceInterval = setInterval(() => {
     }
   }
 }, 30000);
+
+// Sentry error handler (must be after all other middleware)
+if (process.env.SENTRY_DSN) {
+  app.use(Sentry.Handlers.errorHandler());
+}
 
 // Graceful shutdown
 async function shutdown(signal) {
