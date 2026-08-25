@@ -1313,10 +1313,9 @@ const cameras = camEntry.cameras || [];
                       />
                     ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
             </div>
-
             {/* Fleet Camera Wall */}
             {cameraDevices.length > 0 && (
               <div className="col-span-12">
