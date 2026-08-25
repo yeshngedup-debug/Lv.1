@@ -755,8 +755,8 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
   const closeFullscreen = () => setFullscreenDevice(null);
 
-  const cameraDevices = useMemo(() => devices.filter(d => (d.role === 'camera' || (d.role === 'device' && d.isCameraEnabled)) && d.isCameraEnabled !== false), [devices]);
-  const speakerDevices = useMemo(() => devices.filter(d => (d.role === 'speaker' || (d.role === 'device' && d.isSpeakerEnabled)) && d.isSpeakerEnabled !== false), [devices]);
+  const cameraDevices = useMemo(() => devices.filter(d => (d.role === 'camera' || d.role === 'device') && d.isCameraEnabled !== false), [devices]);
+  const speakerDevices = useMemo(() => devices.filter(d => (d.role === 'speaker' || d.role === 'device') && d.isSpeakerEnabled !== false), [devices]);
 
   if (!sessionId) {
     return (

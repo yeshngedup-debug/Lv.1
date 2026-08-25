@@ -14,8 +14,8 @@ export const DeviceCard = React.memo(function DeviceCard({
   setMotionDetectionEnabled,
   peerConnectionsRef
 }) {
-  const isCamera = device.role === 'camera' || (device.role === 'device' && device.isCameraEnabled);
-  const isSpeaker = device.role === 'speaker' || (device.role === 'device' && device.isSpeakerEnabled);
+  const isCamera = (device.role === 'camera' || device.role === 'device') && device.isCameraEnabled !== false;
+  const isSpeaker = (device.role === 'speaker' || device.role === 'device') && device.isSpeakerEnabled !== false;
   const isCombined = device.role === 'device';
   const pc = peerConnectionsRef?.current?.get(device.id);
   const isConnected = pc?.connectionState === 'connected';

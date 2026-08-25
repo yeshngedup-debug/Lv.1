@@ -419,7 +419,13 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
 
       if (isCameraEnabled) {
         startCameraStreaming();
+      } else {
+        // If camera isn't enabled, ensure we still inform host of available cameras for PTZ/setup
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+        socket.emit('device-cameras', { cameras: videoDevices.map(d => ({ id: d.deviceId, label: d.label })) });
       }
+
       if (isSpeakerEnabled) {
         // Initialize audio sync for speaker output (guard against duplicates)
         if (audioRef.current && !audioSyncRef.current) {
