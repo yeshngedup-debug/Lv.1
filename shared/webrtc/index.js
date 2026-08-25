@@ -35,6 +35,10 @@ export function getIceServers() {
   return { iceServers: baseServers, iceCandidatePoolSize: 10 };
 }
 
+export function createRTCPeerConnection(iceServers) {
+  return new RTCPeerConnection({ iceServers });
+}
+
 export class PeerConnectionManager {
   constructor(socket, targetDeviceId, isInitiator = false, options = {}) {
     this.socket = socket;

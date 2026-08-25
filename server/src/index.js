@@ -133,17 +133,46 @@ app.use(helmet({
       frameAncestors: ["'none'"],
     },
   } : false,
-  crossOriginEmbedderPolicy: false,
+  crossOriginEmbedderPolicy: config.nodeEnv === 'production' ? 'require-corp' : false,
+  crossOriginOpenerPolicy: config.nodeEnv === 'production' ? 'same-origin' : false,
   crossOriginResourcePolicy: { policy: 'cross-origin' },
 }));
 
-// CORS configuration
+// CORS configuration - locked down in production
+const corsOrigins = config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map(o => o.trim());
 app.use(cors({
-  origin: config.corsOrigin === '*' ? true : config.corsOrigin.split(',').map(o => o.trim()),
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
+
+// Rate limiting with Redis store (per-IP)
+let rateLimiter;
+if (redisReady && redisClient) {
+  const { RateLimiterRedis } = await import('rate-limiter-flexible');
+  const rateLimiterRedis = new RateLimiterRedis({
+    storeClient: redisClient,
+    keyPrefix: 'rl:',
+    points: config.rateLimitMaxRequests,
+    duration: config.rateLimitWindowMs / 1000,
+  });
+  rateLimiter = (req, res, next) => {
+    rateLimiterRedis.consume(req.ip)
+      .then(() => next())
+      .catch(() => res.status(429).json({ error: 'Too many requests' }));
+  };
+} else {
+  // Fallback to in-memory
+  rateLimiter = rateLimit({
+    windowMs: config.rateLimitWindowMs,
+    max: config.rateLimitMaxRequests,
+    standardHeaders: true,
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip,
+  });
+}
+app.use(rateLimiter);
 
 // Body parsing
 app.use(express.json({ limit: '10mb' }));
@@ -196,6 +225,14 @@ if (config.nodeEnv === 'production') {
 
   // Host dashboard at root
   app.use(express.static(hostDashboardPath));
+
+  // SPA fallback routes (must come after static mounts)
+  app.get(['/join*', '/p*'], (req, res) => {
+    res.sendFile(join(participantPagePath, 'index.html'));
+  });
+  app.get('*', (req, res) => {
+    res.sendFile(join(hostDashboardPath, 'index.html'));
+  });
 }
 
 // Redis-backed session store for horizontal scaling
@@ -1083,20 +1120,6 @@ process.on('uncaughtException', (err) => {
   shutdown('uncaughtException');
 });
 
-// Start server only when executed directly (importing runs tests/tools instead)
-const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isMainModule) {
-  server.listen(PORT, () => {
-    logger.info('Iris SYNCD server started', {
-      port: PORT,
-      baseUrl: BASE_URL,
-      environment: config.nodeEnv,
-      redis: redisReady ? 'connected' : 'not configured',
-    });
-  });
-}
-
 // Test hook: stop timers + servers without killing the process
 function _stopForTests() {
   clearInterval(sessionExpiryInterval);
@@ -1105,6 +1128,20 @@ function _stopForTests() {
   server.close();
   if (redisClient) redisClient.disconnect();
   if (redisSubClient) redisSubClient.disconnect();
+}
+
+// Start server only when executed directly (importing runs tests/tools instead)
+const isMainModule = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isMainModule) {
+  server.listen(config.port, () => {
+    logger.info('Iris SYNCD server started', {
+      port: config.port,
+      baseUrl: config.baseUrl,
+      environment: config.nodeEnv,
+      redis: redisReady ? 'connected' : 'not configured',
+    });
+  });
 }
 
 export {
