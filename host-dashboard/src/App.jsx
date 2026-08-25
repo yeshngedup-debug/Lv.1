@@ -267,7 +267,11 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
               console.warn('No video tracks found in remote stream!');
             }
             videoElement.srcObject = stream;
-            videoElement.play().catch(err => console.error('Video play failed for', key, ':', err));
+            videoElement.play().catch(err => {
+              if (err.name !== 'AbortError') {
+                console.error('Video play failed for', key, ':', err);
+              }
+            });
           }
         });
       };
@@ -603,17 +607,18 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       const key = `${deviceId}-${type}`;
       videoElementsRef.current.set(key, element);
       const pc = peerConnectionsRef.current.get(deviceId);
-      if (pc && pc.remoteStream) {
+      if (pc && pc.remoteStream && element.srcObject !== pc.remoteStream) {
         element.srcObject = pc.remoteStream;
         const playPromise = element.play();
         if (playPromise !== undefined) {
           playPromise.catch(err => {
-            console.warn('Video play failed for', key, '- may need user interaction:', err);
+            if (err.name !== 'AbortError') {
+              console.warn('Video play failed for', key, ':', err);
+            }
           });
         }
       }
     }
-    // Unregistration is unnecessary: elements are GC'd on unmount
   }, []);
 
   const [selectedDevice, setSelectedDevice] = useState(null);
