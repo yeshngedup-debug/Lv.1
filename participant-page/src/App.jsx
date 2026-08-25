@@ -1158,7 +1158,7 @@ const startCameraStreaming = async () => {
           </div>
         )}
 
-        {role === 'camera' && (
+        {(role === 'camera' || role === 'device') && (
           <div className="camera-view">
             <div className="video-container">
               <video
