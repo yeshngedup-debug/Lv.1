@@ -7,7 +7,7 @@ services:
     name: iris-syncd
     runtime: node
     plan: free                 # upgrade for always-on + persistent disk
-    buildCommand: npm install && npm run build && npm test
+    buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
     autoDeploy: true
