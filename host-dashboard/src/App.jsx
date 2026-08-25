@@ -21,15 +21,49 @@ import './App.css';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
 const ALLOWED_AUDIO_TYPES = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp4', 'audio/webm'];
+const HOST_SESSION_KEY = 'iris-syncd-host-session';
+
+function loadHostSession() {
+  try {
+    const raw = sessionStorage.getItem(HOST_SESSION_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed?.sessionId) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveHostSession(session) {
+  try {
+    if (!session?.sessionId) {
+      sessionStorage.removeItem(HOST_SESSION_KEY);
+      return;
+    }
+    sessionStorage.setItem(HOST_SESSION_KEY, JSON.stringify(session));
+  } catch {
+    // ignore quota / private-mode failures
+  }
+}
+
+function clearHostSession() {
+  try {
+    sessionStorage.removeItem(HOST_SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 function App() {
   const [socket, setSocket] = useState(null);
-  const [sessionId, setSessionId] = useState(null);
-  const sessionIdRef = useRef(sessionId);
+  const restoredSession = useRef(loadHostSession()).current;
+  const [sessionId, setSessionId] = useState(restoredSession?.sessionId || null);
+  const sessionIdRef = useRef(restoredSession?.sessionId || null);
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
-  const [joinUrl, setJoinUrl] = useState('');
+  const [joinUrl, setJoinUrl] = useState(restoredSession?.joinUrl || '');
   const [devices, setDevices] = useState([]);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -90,11 +124,15 @@ function App() {
         newSocket.emit('rejoin-session', { sessionId: currentSessionId }, (response) => {
           if (response.error) {
             console.error('Rejoin failed:', response.error);
+            clearHostSession();
             setSessionId(null);
             setDevices([]);
             setJoinUrl('');
           } else {
             if (response.hostToken) hostTokenRef.current = response.hostToken;
+            const restoredJoinUrl = response.joinUrl || `${window.location.origin}/join/${currentSessionId}`;
+            setJoinUrl(restoredJoinUrl);
+            saveHostSession({ sessionId: currentSessionId, joinUrl: restoredJoinUrl });
             setDevices(response.devices || []);
             // After a refresh the local File/blob is gone, so the host cannot
             // monitor or restart playback until the track is re-selected.
@@ -262,6 +300,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
 
     socket.on('session-ended', () => {
       alert('Session has ended');
+      clearHostSession();
       setSessionId(null);
       setDevices([]);
       setJoinUrl('');
@@ -342,6 +381,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
       setSessionId(response.sessionId);
       setJoinUrl(response.joinUrl);
       if (response.hostToken) hostTokenRef.current = response.hostToken;
+      saveHostSession({ sessionId: response.sessionId, joinUrl: response.joinUrl });
     });
   };
 
@@ -543,6 +583,7 @@ socket.on('camera-offer', async ({ deviceId, offer }) => {
     if (!socket) return;
     stopPushToTalk();
     socket.emit('end-session');
+    clearHostSession();
     setSessionId(null);
     setDevices([]);
     setJoinUrl('');
