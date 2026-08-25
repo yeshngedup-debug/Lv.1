@@ -7,56 +7,56 @@
 
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-100.woff2') format('woff2');
+  src: url('/fonts/poppins-100.woff2') format('woff2');
   font-weight: 100;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-200.woff2') format('woff2');
+  src: url('/fonts/poppins-200.woff2') format('woff2');
   font-weight: 200;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-300.woff2') format('woff2');
+  src: url('/fonts/poppins-300.woff2') format('woff2');
   font-weight: 300;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-400.woff2') format('woff2');
+  src: url('/fonts/poppins-400.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-500.woff2') format('woff2');
+  src: url('/fonts/poppins-500.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-600.woff2') format('woff2');
+  src: url('/fonts/poppins-600.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-700.woff2') format('woff2');
+  src: url('/fonts/poppins-700.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
 }
 @font-face {
   font-family: 'Poppins';
-  src: url('/assets/poppins-800.woff2') format('woff2');
+  src: url('/fonts/poppins-800.woff2') format('woff2');
   font-weight: 800;
   font-style: normal;
   font-display: swap;
