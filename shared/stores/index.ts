@@ -44,10 +44,8 @@ export const useDeviceStore = create((set, get) => ({
   updateDevice: (id, updates) => {
     const { devices } = get();
     const newDevices = new Map(devices);
-    const existing = newDevices.get(id);
-    if (existing) {
-      newDevices.set(id, { ...existing, ...updates });
-    }
+    // Upsert: device-joined arrives before the device exists in the map
+    newDevices.set(id, { ...newDevices.get(id), ...updates });
     set({ devices: newDevices });
   },
 
