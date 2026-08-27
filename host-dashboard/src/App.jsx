@@ -11,7 +11,6 @@ import io from 'socket.io-client';
 import {
   Radio,
   Video,
-  Speaker,
   Music,
   Mic,
   MicOff,
@@ -26,12 +25,10 @@ import {
   RotateCcw,
   Monitor,
   Sparkles,
-  Volume2,
   ChevronLeft,
   ChevronRight,
   Expand,
   Users,
-  Activity,
   Wifi,
   Gauge,
   AlertTriangle,
@@ -41,14 +38,14 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCw,
-  Bell,
   Eye,
-  BellOff,
+  X,
 } from 'lucide-react';
 import { PeerConnectionManager } from './webrtc';
 import { AudioBroadcast } from './components/audio/AudioBroadcast';
 import { CameraFeedTile } from './components/camera/CameraFeedTile';
 import { DeviceCard } from './components/device/DeviceCard';
+import { Equalizer } from './components/Equalizer';
 import { formatTime, formatFileSize } from './utils/audioUtils';
 import { useSessionStore, useDeviceStore, useAudioStore, useUIStore } from '@shared/stores';
 
@@ -206,6 +203,62 @@ function App() {
     [attachStreamToDevice],
   );
 
+  // Session timing + honest status data
+  const [sessionStartedAt, setSessionStartedAt] = useState(null);
+  const [nowTick, setNowTick] = useState(() => Date.now());
+  const [audioError, setAudioError] = useState(null);
+
+  // Host preferences (persisted across refreshes)
+  const [hostPrefs, setHostPrefs] = useState(() => {
+    try {
+      return {
+        autoInvite: true,
+        reduceMotion: false,
+        ...JSON.parse(localStorage.getItem('iris-syncd-prefs') || '{}'),
+      };
+    } catch {
+      return { autoInvite: true, reduceMotion: false };
+    }
+  });
+  const updateHostPrefs = useCallback((patch) => {
+    setHostPrefs((prev) => {
+      const next = { ...prev, ...patch };
+      try {
+        localStorage.setItem('iris-syncd-prefs', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  }, []);
+
+  // Uptime ticker runs only while a session exists
+  useEffect(() => {
+    if (!sessionId) return;
+    const iv = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(iv);
+  }, [sessionId]);
+
+  const formatUptime = useCallback((ms) => {
+    const s = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h > 0
+      ? `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`
+      : `${m}:${String(sec).padStart(2, '0')}`;
+  }, []);
+
+  // Invite modal: Esc closes, focus moves into the dialog
+  const inviteCloseRef = useRef(null);
+  useEffect(() => {
+    if (!showJoinModal) return;
+    inviteCloseRef.current?.focus();
+    const onKey = (e) => {
+      if (e.key === 'Escape') setShowJoinModal(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [showJoinModal, setShowJoinModal]);
+
   // Socket connection with cleanup — real server protocol.
   // Runs once on mount: depending on `socket` here would loop, because the
   // effect sets it and the cleanup would kill each socket mid-handshake.
@@ -239,6 +292,7 @@ function App() {
               joinUrl: res.joinUrl,
               hostToken: res.hostToken,
             });
+            setSessionStartedAt(Date.now());
             if (Array.isArray(res.devices)) {
               useDeviceStore
                 .getState()
@@ -269,7 +323,13 @@ function App() {
         joinUrl: created.joinUrl,
         hostToken: created.hostToken,
       });
-      useUIStore.getState().setShowJoinModal(true);
+      setSessionStartedAt(Date.now());
+      let autoInvite = true;
+      try {
+        autoInvite =
+          JSON.parse(localStorage.getItem('iris-syncd-prefs') || '{}').autoInvite !== false;
+      } catch {}
+      if (autoInvite) useUIStore.getState().setShowJoinModal(true);
     };
 
     newSocket.on('disconnect', (reason) => {
@@ -376,26 +436,32 @@ function App() {
   }, []);
 
   // File upload handling
-  const handleFileChange = useCallback((e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const handleFileChange = useCallback(
+    (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
 
-    if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
-      alert('Please upload a valid audio file (MP3, WAV, OGG, MP4, WEBM)');
-      return;
-    }
+      if (!ALLOWED_AUDIO_TYPES.includes(file.type)) {
+        setAudioError(
+          `"${file.name}" isn't a supported audio format. Use MP3, WAV, OGG, MP4, or WEBM.`,
+        );
+        return;
+      }
 
-    if (file.size > MAX_AUDIO_SIZE) {
-      alert('File size must be under 50MB');
-      return;
-    }
+      if (file.size > MAX_AUDIO_SIZE) {
+        setAudioError(`"${file.name}" is ${formatFileSize(file.size)} — the limit is 50MB.`);
+        return;
+      }
 
-    setAudioFile(file);
-    setUploading(true);
-  }, []);
+      setAudioError(null);
+      setAudioFile(file);
+    },
+    [setAudioFile],
+  );
 
   const handleUploadAudio = useCallback(async () => {
     if (!audioFile || !sessionId || !hostTokenRef.current) return;
+    setAudioError(null);
     setUploading(true);
 
     try {
@@ -433,7 +499,7 @@ function App() {
       setUploading(false);
     } catch (error) {
       console.error('Upload error:', error);
-      alert('Upload failed. Please try again.');
+      setAudioError('Upload failed — the server may be busy. Check your connection and try again.');
       setUploading(false);
     }
   }, [audioFile, sessionId, setAudioUrl, setUploadedTrack, setDuration, setUploading]);
@@ -580,7 +646,7 @@ function App() {
   }
 
   return (
-    <div className="gridline-app min-h-[100dvh]">
+    <div className={`gridline-app min-h-[100dvh] ${hostPrefs.reduceMotion ? 'reduce-motion' : ''}`}>
       {/* Sidebar */}
       <aside
         className={`fixed left-0 top-0 bottom-0 w-64 bg-surface/95 backdrop-blur-xs 
@@ -603,6 +669,7 @@ function App() {
             <div className="px-4 space-y-1">
               <button
                 onClick={() => handleTabChange('overview')}
+                aria-current={activeTab === 'overview' ? 'page' : undefined}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-left 
                          ${activeTab === 'overview' ? 'bg-white/10' : 'hover:bg-white/5'} 
                          transition-all duration-200`}
@@ -613,6 +680,7 @@ function App() {
 
               <button
                 onClick={() => handleTabChange('devices')}
+                aria-current={activeTab === 'devices' ? 'page' : undefined}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-left 
                          ${activeTab === 'devices' ? 'bg-white/10' : 'hover:bg-white/5'} 
                          transition-all duration-200`}
@@ -623,6 +691,7 @@ function App() {
 
               <button
                 onClick={() => handleTabChange('audio')}
+                aria-current={activeTab === 'audio' ? 'page' : undefined}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-left 
                          ${activeTab === 'audio' ? 'bg-white/10' : 'hover:bg-white/5'} 
                          transition-all duration-200`}
@@ -633,6 +702,7 @@ function App() {
 
               <button
                 onClick={() => handleTabChange('settings')}
+                aria-current={activeTab === 'settings' ? 'page' : undefined}
                 className={`flex items-center gap-3 px-3 py-2 rounded-md text-left 
                          ${activeTab === 'settings' ? 'bg-white/10' : 'hover:bg-white/5'} 
                          transition-all duration-200`}
@@ -657,7 +727,9 @@ function App() {
 
       {/* Main Content */}
       <main
-        className={`flex-1 min-h-[100dvh] overflow-x-hidden transition-margin-duration-300 ml-${sidebarCollapsed ? '0' : '64px'}`}
+        className={`flex-1 min-h-[100dvh] overflow-x-hidden transition-[margin-left] duration-300 ${
+          sidebarCollapsed ? 'ml-0' : 'ml-64'
+        }`}
       >
         {/* Status Strip */}
         <div
@@ -666,6 +738,8 @@ function App() {
         >
           <div className="flex items-center gap-2">
             <span
+              role="status"
+              aria-live="polite"
               className="inline-flex items-center gap-1 px-2 py-0.5 rounded 
                      bg-accent-green/20 text-accent-green border border-accent-green/30"
             >
@@ -717,68 +791,78 @@ function App() {
           </div>
         </div>
 
-        {/* QR Code Modal */}
+        {/* Invite Modal */}
         {showJoinModal && (
-          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowJoinModal(false)}
+          >
             <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="invite-title"
+              onClick={(e) => e.stopPropagation()}
               className="bg-surface/95 backdrop-blur-xs rounded-2xl p-6 w-full max-w-md 
                          border border-white/5 shadow-2xl animate-[fade-in_0.2s_ease-out]"
             >
-              <div className="text-center mb-6">
-                <h3 className="font-display text-xl text-text-primary mb-2">Share Session</h3>
-                <p className="text-sm text-text-tertiary">Scan QR code or share link to join</p>
+              <div className="flex items-start justify-between mb-6">
+                <div>
+                  <h3 id="invite-title" className="font-display text-xl text-text-primary mb-1">
+                    Invite your guests
+                  </h3>
+                  <p className="text-sm text-text-tertiary">
+                    They scan the code or enter it at <span className="font-mono">/join</span>
+                  </p>
+                </div>
+                <button
+                  ref={inviteCloseRef}
+                  onClick={() => setShowJoinModal(false)}
+                  aria-label="Close invite dialog"
+                  className="p-2 rounded hover:bg-white/5 text-text-tertiary hover:text-text-primary"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
 
               <div className="space-y-4">
-                <div className="relative w-48 h-48 mx-auto">
+                <div className="w-48 h-48 mx-auto p-3 rounded-xl bg-white/5 border border-white/10">
                   <QRCodeSVG
                     value={joinUrl || ''}
-                    size={180}
+                    size={168}
                     bgColor="transparent"
                     fgColor="var(--color-text-primary)"
                     qrcodeOptions={{
                       margin: 0,
-                      width: 180,
-                      height: 180,
+                      width: 168,
+                      height: 168,
                     }}
                   />
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="flex items-center gap-2">
-                      <Video className="h-5 w-5 text-accent-cyan" />
-                      <Speaker className="h-5 w-5 text-accent-rose" />
-                    </div>
-                  </div>
                 </div>
 
                 <div className="text-center">
-                  <p className="text-sm text-text-tertiary mb-2">
-                    Session ID: <span className="font-mono text-text-primary">{sessionId}</span>
+                  <p className="text-xs text-text-tertiary mb-1 uppercase tracking-wider">
+                    Or enter the code
                   </p>
-                  <button
-                    onClick={handleCopyLink}
-                    className="gridline-btn-ghost flex items-center justify-center gap-2"
-                  >
-                    {copied ? (
-                      <>
-                        <Check className="h-4 w-4 text-accent-green" />
-                        <span>Copied!</span>
-                      </>
-                    ) : (
-                      <>
-                        <Copy className="h-4 w-4" />
-                        <span>Copy Link</span>
-                      </>
-                    )}
-                  </button>
+                  <p className="font-mono text-2xl text-text-primary tracking-[0.3em]">
+                    {sessionId}
+                  </p>
                 </div>
-              </div>
 
-              <div className="flex justify-end">
                 <button
-                  onClick={() => setShowJoinModal(false)}
-                  className="p-2 rounded hover:bg-white/5 text-text-tertiary"
+                  onClick={handleCopyLink}
+                  className="gridline-btn-primary w-full flex items-center justify-center gap-2"
                 >
-                  <BellOff className="h-4 w-4" />
+                  {copied ? (
+                    <>
+                      <Check className="h-4 w-4 text-accent-green" />
+                      <span>Link copied</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="h-4 w-4" />
+                      <span>Copy invite link</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -851,127 +935,206 @@ function App() {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm text-text-tertiary">
                       <span>Devices</span>
-                      <span>{devices.size}</span>
+                      <span className="font-mono text-text-primary">{devices.size}</span>
                     </div>
                     <div className="flex justify-between text-sm text-text-tertiary">
-                      <span>Latency</span>
-                      <span>42ms</span>
+                      <span>Cameras</span>
+                      <span className="font-mono text-text-primary">
+                        {[...devices.values()].filter((d) => d.isCameraEnabled).length}
+                      </span>
                     </div>
                     <div className="flex justify-between text-sm text-text-tertiary">
-                      <span>Bandwidth</span>
-                      <span>2.3 Mbps</span>
+                      <span>On air</span>
+                      <span className="font-mono text-text-primary">
+                        {sessionStartedAt ? formatUptime(nowTick - sessionStartedAt) : '—'}
+                      </span>
                     </div>
                   </div>
                 </div>
 
-                {/* Audio Status Card */}
+                {/* Audio Broadcast Card — step flow: choose → upload → broadcast */}
                 <div className="gridline-card p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Music className="h-4 w-4 text-accent-magenta" />
-                      <h3 className="font-medium text-text-primary">Audio</h3>
+                      <h3 className="font-medium text-text-primary">Audio Broadcast</h3>
                     </div>
                     <span
-                      className="px-2 py-0.5 rounded text-xs font-medium 
-                             bg-white/10"
+                      className={`px-2 py-0.5 rounded text-xs font-medium ${
+                        isPlaying ? 'bg-accent-magenta/20 text-accent-magenta' : 'bg-white/10'
+                      }`}
                     >
-                      {isPlaying ? 'PLAYING' : 'STOPPED'}
+                      {isPlaying ? 'ON AIR' : audioFile ? 'READY' : 'IDLE'}
                     </span>
                   </div>
-                  <div className="space-y-2">
-                    {audioUrl ? (
-                      <>
-                        <div className="flex justify-between text-sm text-text-tertiary">
-                          <span>Track</span>
-                          <span className="line-clamp-1 max-w-xs">
-                            {uploadedTrack?.name || 'Unknown'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-sm text-text-tertiary">
-                          <span>Time</span>
-                          <span>
-                            {formatTime(playbackPosition)} / {formatTime(duration)}
-                          </span>
-                        </div>
-                        <div className="w-full bg-white/5 rounded-h-full h-2.5 mt-2">
-                          <div
-                            className={`h-full bg-gradient-to-r from-accent-violet to-accent-magenta rounded-h-full 
-                                     transition-width duration-200 ease-out`}
-                            style={{ width: `${(playbackPosition / duration) * 100}%` }}
-                          ></div>
-                        </div>
-                      </>
-                    ) : (
-                      <p className="text-sm text-text-tertiary text-center py-4">No track loaded</p>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between mt-3">
-                    <button
-                      onClick={handlePlayPause}
-                      disabled={!audioUrl || uploading}
-                      className="gridline-btn-ghost px-4 py-2"
-                    >
-                      {isPlaying ? (
-                        <>
-                          <Pause className="h-4 w-4" />
-                          <span>Pause</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-4 w-4" />
-                          <span>Play</span>
-                        </>
-                      )}
-                    </button>
 
-                    <button
-                      onClick={handleUploadAudio}
-                      disabled={uploading || !audioFile}
-                      className="ml-2 gridline-btn-ghost px-4 py-2"
-                    >
-                      {uploading ? (
-                        <>
-                          <RefreshCw className="h-4 w-4 animate-[spin-slow_3s_linear_infinite]" />
-                          <span>Uploading...</span>
-                        </>
-                      ) : (
-                        <>
+                  {audioError && (
+                    <div className="error-banner mb-3" role="alert">
+                      <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{audioError}</span>
+                    </div>
+                  )}
+
+                  {uploadedTrack?.id ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm text-text-tertiary">
+                        <span>Track</span>
+                        <span className="line-clamp-1 max-w-xs text-text-primary">
+                          {uploadedTrack?.name || 'Unknown'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-sm text-text-tertiary">
+                        <span>Time</span>
+                        <span className="font-mono">
+                          {formatTime(playbackPosition)} / {formatTime(duration)}
+                        </span>
+                      </div>
+                      <div className="w-full bg-white/5 rounded-full h-2.5 mt-2">
+                        <div
+                          className="h-full bg-gradient-to-r from-accent-violet to-accent-magenta rounded-full 
+                                     transition-[width] duration-200 ease-out"
+                          style={{
+                            width: `${duration ? (playbackPosition / duration) * 100 : 0}%`,
+                          }}
+                        ></div>
+                      </div>
+                      {isPlaying && <Equalizer active bars={24} className="mt-2" />}
+                      <div className="flex items-center gap-2 mt-3">
+                        <button
+                          onClick={handlePlayPause}
+                          className="gridline-btn-primary px-4 py-2 flex items-center gap-2"
+                        >
+                          {isPlaying ? (
+                            <>
+                              <Pause className="h-4 w-4" />
+                              <span>Pause broadcast</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="h-4 w-4" />
+                              <span>Resume broadcast</span>
+                            </>
+                          )}
+                        </button>
+                        <label className="gridline-btn-ghost px-4 py-2 flex items-center gap-2 cursor-pointer">
                           <Upload className="h-4 w-4" />
-                          <span>Upload</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                          <span>New track</span>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="sr-only"
+                            onChange={handleFileChange}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : audioFile ? (
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm text-text-tertiary">
+                        <span>Selected</span>
+                        <span className="line-clamp-1 max-w-xs text-text-primary">
+                          {audioFile.name} ({formatFileSize(audioFile.size)})
+                        </span>
+                      </div>
+                      <p className="text-xs text-text-tertiary">
+                        Step 2 of 3 — upload sends the track to every connected device.
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={handleUploadAudio}
+                          disabled={uploading}
+                          className="gridline-btn-primary px-4 py-2 flex items-center gap-2"
+                        >
+                          {uploading ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-[spin_1.2s_linear_infinite]" />
+                              <span>Uploading…</span>
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4" />
+                              <span>Upload to session</span>
+                            </>
+                          )}
+                        </button>
+                        <label className="gridline-btn-ghost px-4 py-2 flex items-center gap-2 cursor-pointer">
+                          <span>Choose different</span>
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="sr-only"
+                            onChange={handleFileChange}
+                          />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      <p className="text-sm text-text-tertiary">
+                        Broadcast a track to every connected phone — they stay in sync
+                        automatically.
+                      </p>
+                      <p className="text-xs text-text-tertiary">
+                        Step 1 of 3 · MP3, WAV, OGG, MP4, WEBM · up to 50MB
+                      </p>
+                      <label className="gridline-btn-primary px-4 py-2 inline-flex items-center gap-2 cursor-pointer">
+                        <Upload className="h-4 w-4" />
+                        <span>Choose audio file</span>
+                        <input
+                          type="file"
+                          accept="audio/*"
+                          className="sr-only"
+                          onChange={handleFileChange}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
 
-                {/* Controls Card */}
+                {/* Quick Actions Card */}
                 <div className="gridline-card p-4">
                   <div className="flex items-center justify-between mb-3">
                     <div className="flex items-center gap-2">
                       <Maximize2 className="h-4 w-4 text-accent-green" />
-                      <h3 className="font-medium text-text-primary">Controls</h3>
+                      <h3 className="font-medium text-text-primary">Quick Actions</h3>
                     </div>
                     <button
                       onClick={() => setShowJoinModal(true)}
-                      className="gridline-btn-ghost px-4 py-2"
+                      className="gridline-btn-ghost px-4 py-2 flex items-center gap-2"
                     >
                       <Radio className="h-4 w-4" />
                       <span>Invite</span>
                     </button>
                   </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-3">
-                      <Mic className="h-3 w-3 text-accent-rose" />
-                      <span className="text-sm">Push-to-Talk</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Bell className="h-3 w-3 text-accent-amber" />
-                      <span className="text-sm">Notifications</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <Activity className="h-3 w-3 text-accent-violet" />
-                      <span className="text-sm">Activity Log</span>
-                    </div>
+                  <div className="space-y-3">
+                    <button
+                      onMouseDown={handlePushToTalk}
+                      onMouseUp={handleStopPushToTalk}
+                      onMouseLeave={handleStopPushToTalk}
+                      onTouchStart={handlePushToTalk}
+                      onTouchEnd={handleStopPushToTalk}
+                      onKeyDown={(e) => {
+                        if (e.key === ' ' && !e.repeat) {
+                          e.preventDefault();
+                          handlePushToTalk();
+                        }
+                      }}
+                      onKeyUp={(e) => {
+                        if (e.key === ' ') handleStopPushToTalk();
+                      }}
+                      aria-pressed={isTalking}
+                      className={`w-full px-4 py-3 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                        isTalking
+                          ? 'ptt-active'
+                          : 'bg-white/5 border-white/10 text-text-primary hover:bg-white/10'
+                      }`}
+                    >
+                      {isTalking ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                      <span>{isTalking ? 'Talking…' : 'Hold to talk to the room'}</span>
+                    </button>
+                    <p className="text-xs text-text-tertiary">
+                      Keep it pressed while you speak — every speaker plays your voice live.
+                    </p>
                   </div>
                 </div>
               </div>
@@ -991,9 +1154,17 @@ function App() {
                 {[...devices.values()].filter((d) => d.isCameraEnabled).length === 0 ? (
                   <div className="gridline-card p-8 text-center">
                     <Video className="h-8 w-8 text-text-tertiary mx-auto mb-3" />
-                    <p className="text-sm text-text-tertiary">
-                      No cameras connected — devices joining with camera enabled appear here
+                    <p className="text-sm text-text-primary mb-1">No cameras in the room yet</p>
+                    <p className="text-xs text-text-tertiary mb-4">
+                      When a guest joins with their camera on, their feed appears here instantly.
                     </p>
+                    <button
+                      onClick={() => setShowJoinModal(true)}
+                      className="gridline-btn-primary px-4 py-2 inline-flex items-center gap-2"
+                    >
+                      <Radio className="h-4 w-4" />
+                      <span>Invite a phone</span>
+                    </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
@@ -1126,130 +1297,53 @@ function App() {
             <>
               <div className="mb-6">
                 <h2 className="font-display text-2xl text-text-primary mb-2">Settings</h2>
-                <p className="text-sm text-text-tertiary">Configure session preferences</p>
+                <p className="text-sm text-text-tertiary">
+                  Preferences apply on this device and are remembered for your next session.
+                </p>
               </div>
 
-              <div className="space-y-4">
+              <div className="space-y-4 max-w-xl">
                 <div className="gridline-card p-4">
                   <h3 className="font-medium text-text-primary mb-3">Session</h3>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium">
+                  <div className="space-y-3">
+                    <label className="flex items-start gap-3 text-sm font-medium cursor-pointer">
                       <input
                         type="checkbox"
-                        defaultChecked={true}
-                        className="h-3 w-3 text-accent-violet"
+                        checked={hostPrefs.autoInvite}
+                        onChange={(e) => updateHostPrefs({ autoInvite: e.target.checked })}
+                        className="mt-0.5 h-4 w-4"
                       />
-                      Auto-rejoin on refresh
+                      <span>
+                        Open the invite dialog when a new session starts
+                        <span className="block text-xs font-normal text-text-tertiary">
+                          Turn this off if you prefer to invite guests yourself.
+                        </span>
+                      </span>
                     </label>
-                    <label className="flex items-center gap-2 text-sm font-medium">
+                    <label className="flex items-start gap-3 text-sm font-medium cursor-pointer">
                       <input
                         type="checkbox"
-                        defaultChecked={false}
-                        className="h-3 w-3 text-accent-violet"
+                        checked={hostPrefs.reduceMotion}
+                        onChange={(e) => updateHostPrefs({ reduceMotion: e.target.checked })}
+                        className="mt-0.5 h-4 w-4"
                       />
-                      Enable session recording
-                    </label>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={true}
-                        className="h-3 w-3 text-accent-violet"
-                      />
-                      Show connection diagnostics
-                    </label>
-                  </div>
-                </div>
-
-                <div className="gridline-card p-4">
-                  <h3 className="font-medium text-text-primary mb-3">Audio</h3>
-                  <div className="space-y-2">
-                    <label className="block text-sm font-medium mb-1">Playback Volume</label>
-                    <div className="flex items-center">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={volume * 100}
-                        onChange={(e) => {
-                          const vol = e.target.value / 100;
-                          setVolume(vol);
-                        }}
-                        className="w-full h-1.5 bg-white/5 rounded-h-full"
-                      />
-                      <Volume2 className="h-3 w-3 ml-2 text-accent-green" />
-                    </div>
-                    <p className="text-xs text-text-tertiary mt-1">{(volume * 100).toFixed(0)}%</p>
-                  </div>
-
-                  <div className="mt-4">
-                    <label className="block text-sm font-medium mb-1">Microphone Sensitivity</label>
-                    <div className="flex items-center">
-                      <input
-                        type="range"
-                        min="0"
-                        max="100"
-                        value={70}
-                        className="w-full h-1.5 bg-white/5 rounded-h-full"
-                      />
-                      <Mic className="h-3 w-3 ml-2 text-accent-rose" />
-                    </div>
-                    <p className="text-xs text-text-tertiary mt-1">70%</p>
-                  </div>
-                </div>
-
-                <div className="gridline-card p-4">
-                  <h3 className="font-medium text-text-primary mb-3">Video</h3>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={true}
-                        className="h-3 w-3 text-accent-cyan"
-                      />
-                      Enable HD video
-                    </label>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={false}
-                        className="h-3 w-3 text-accent-cyan"
-                      />
-                      Enable low-light mode
-                    </label>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={true}
-                        className="h-3 w-3 text-accent-cyan"
-                      />
-                      Enable noise reduction
+                      <span>
+                        Reduce motion
+                        <span className="block text-xs font-normal text-text-tertiary">
+                          Disables animations and pulsing effects across the dashboard.
+                        </span>
+                      </span>
                     </label>
                   </div>
                 </div>
 
                 <div className="gridline-card p-4">
-                  <h3 className="font-medium text-text-primary mb-3">Performance</h3>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={true}
-                        className="h-3 w-3 text-accent-green"
-                      />
-                      Adaptive quality
-                    </label>
-                    <p className="text-xs text-text-tertiary">
-                      Automatically adjust quality based on network
-                    </p>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        defaultChecked={false}
-                        className="h-3 w-3 text-accent-green"
-                      />
-                      Prioritize audio sync
-                    </label>
-                  </div>
+                  <h3 className="font-medium text-text-primary mb-3">Always on</h3>
+                  <ul className="space-y-2 text-sm text-text-tertiary">
+                    <li>· Sessions rejoin automatically after a refresh.</li>
+                    <li>· Device volume is controlled on each guest's phone.</li>
+                    <li>· Audio stays synced within ~20ms — no tuning needed.</li>
+                  </ul>
                 </div>
               </div>
             </>

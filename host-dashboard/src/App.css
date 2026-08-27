@@ -127,12 +127,9 @@
 .brand-name {
   font-family: var(--font-display);
   font-size: 1.05rem;
-  font-weight: 500;
+  font-weight: 600;
   letter-spacing: -0.02em;
-  background: linear-gradient(90deg, var(--accent-violet), var(--accent-cyan));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
+  color: var(--text-primary);
 }
 .brand-badge {
   font-size: 0.625rem;
@@ -1568,4 +1565,64 @@ a:focus-visible,
   background: rgba(139, 92, 246, 0.14);
   color: var(--accent-violet-light);
   border-color: var(--border-accent);
+}
+
+/* ============================================================
+   State + surface styles (critique fixes, 2026-08-27)
+   ============================================================ */
+
+/* Inline error banner — replaces native alert() */
+.error-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.625rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  color: #fda4af;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+}
+
+/* Push-to-talk active state */
+.ptt-active {
+  background: rgba(244, 63, 94, 0.18) !important;
+  border-color: rgba(244, 63, 94, 0.5) !important;
+  color: #fda4af !important;
+  box-shadow: 0 0 18px rgba(244, 63, 94, 0.35);
+}
+
+/* Reduce motion preference (host toggle) */
+.reduce-motion *,
+.reduce-motion *::before,
+.reduce-motion *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* Browser surfaces carry the palette too */
+::selection {
+  background: rgba(139, 92, 246, 0.45);
+  color: #fff;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.35) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.35);
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+input[type='range'] {
+  accent-color: var(--accent-violet);
 }
