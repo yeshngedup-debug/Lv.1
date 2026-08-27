@@ -1281,11 +1281,12 @@ function App() {
               duration={duration}
               uploading={uploading}
               uploadedTrack={uploadedTrack}
+              audioError={audioError}
               handleFileChange={handleFileChange}
               handleSeek={handleSeek}
+              handleUpload={handleUploadAudio}
               startPlayback={handlePlayPause}
               pausePlayback={handlePlayPause}
-              resumePlayback={handlePlayPause}
               startPushToTalk={handlePushToTalk}
               stopPushToTalk={handleStopPushToTalk}
               formatTime={formatTime}
