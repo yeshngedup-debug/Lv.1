@@ -1,15 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [react()],
-  optimizeDeps: {
-    rolldownOptions: {}
-  },
+  plugins: [
+    react(),
+    tailwindcss()
+  ],
   base: '/',
   resolve: {
     alias: {
@@ -17,14 +18,6 @@ export default defineConfig({
     }
   },
   publicDir: 'public',
-  css: {
-    // Prevent Vite from resolving font URLs in @font-face at build time
-    // Fonts are in public/fonts/ and served as static assets
-    resolve: {
-      // Don't process absolute URLs starting with /fonts/
-      skipUrlResolver: (url) => url.startsWith('/fonts/')
-    }
-  },
   server: {
     port: 5173,
     proxy: {
@@ -36,6 +29,18 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3001',
         changeOrigin: true
+      }
+    }
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          motion: ['framer-motion'],
+          socket: ['socket.io-client'],
+          icons: ['lucide-react']
+        }
       }
     }
   }

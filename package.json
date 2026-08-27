@@ -1,6 +1,6 @@
 {
   "name": "iris-syncd",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "description": "Multi-Device Party Speaker & Camera Dashboard",
   "workspaces": [
@@ -16,9 +16,7 @@
     "render-build": "npm install --workspaces && npm run build"
   },
   "devDependencies": {
-    "autoprefixer": "^10.5.4",
-    "concurrently": "^8.2.2",
-    "postcss": "^8.5.26",
-    "tailwindcss": "^4.3.3"
+    "concurrently": "^9.1.0"
   }
+}
 }

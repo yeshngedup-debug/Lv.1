@@ -1,6 +1,6 @@
 {
   "name": "iris-syncd-participant",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,18 +9,25 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@sentry/react": "^8.0.0",
-    "lucide-react": "^1.33.0",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "socket.io-client": "^4.7.5"
+    "@fontsource-variable/inter": "^5.1.0",
+    "@fontsource-variable/jetbrains-mono": "^5.1.0",
+    "@fontsource-variable/space-grotesk": "^5.1.0",
+    "@sentry/react": "^9.0.0",
+    "framer-motion": "^12.0.0",
+    "lucide-react": "^0.470.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "socket.io-client": "^4.8.0",
+    "zustand": "^5.0.0"
   },
   "devDependencies": {
-    "@types/react": "^18.3.3",
-    "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^8.2.1",
-    "vite-plugin-pwa": "^1.3.0",
-    "workbox-window": "^7.0.0"
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.4.0",
+    "tailwindcss": "^4.1.0",
+    "vite": "^6.3.0",
+    "vite-plugin-pwa": "^0.21.0",
+    "workbox-window": "^7.3.0"
   }
 }

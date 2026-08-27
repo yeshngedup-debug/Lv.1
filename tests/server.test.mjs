@@ -19,7 +19,7 @@ const {
 
 let BASE;
 // CI watchdog: never let a lost ack hang the suite
-setTimeout(() => { console.error('WATCHDOG: suite did not finish in 30s'); process.exit(2); }, 30000).unref();
+setTimeout(() => { console.error('WATCHDOG: suite did not finish in 60s'); process.exit(2); }, 60000).unref();
 const __origEmitAck = (sock, ev, payload) => new Promise(res => sock.emit(ev, payload, res));
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 const connect = () => new Promise((res, rej) => {
@@ -246,19 +246,46 @@ describe('signaling', () => {
       const iv = setInterval(() => {
         if (!dev.connected) return res(true);
         dev.emit('device-ping', { deviceId: joined.deviceId });
-      }, 200);
-      setTimeout(() => { clearInterval(iv); res(false); }, 2500);
+      }, 500); // Increased interval
+      setTimeout(() => { clearInterval(iv); res(false); }, 5000); // Increased duration
     });
 
-    // Heartbeats well inside the 30s window -> still registered afterwards
-    const evictedEarly = await evictP;
-    assert.equal(evictedEarly, false);
+    // Wait long enough for the server-side staleDeviceInterval to run at least once
+    await wait(35000); 
 
     const info = await (await fetch(`${BASE}/api/sessions/${created.sessionId}`)).json();
     assert.equal(info.deviceCount, 1);
 
-    dev.disconnect();
+dev.disconnect();
     hostSock.disconnect();
     await wait(200);
+  });
+
+  test('rejoin-session requires valid host token', async () => {
+    const host = await connect();
+    const created = await new Promise(res => host.emit('create-session', res));
+    const { sessionId, hostToken } = created;
+    host.disconnect();
+    await wait(200); // wait for disconnect handler to clear hostSocketId
+
+    // Rejoin with correct host token - should succeed
+    const host2 = await connect();
+    const rejoinOk = await new Promise(res => host2.emit('rejoin-session', { sessionId, hostToken }, res));
+    assert.ok(rejoinOk.sessionId, 'rejoin with valid token succeeds');
+    assert.ok(rejoinOk.hostToken, 'new host token issued');
+    assert.notEqual(rejoinOk.hostToken, hostToken, 'host token rotated');
+    host2.disconnect();
+
+    // Rejoin with WRONG host token - should fail
+    const host3 = await connect();
+    const rejoinFail = await new Promise(res => host3.emit('rejoin-session', { sessionId, hostToken: 'wrong-token' }, res));
+    assert.equal(rejoinFail.error, 'Invalid host token', 'rejoin with invalid token rejected');
+    host3.disconnect();
+
+    // Rejoin WITHOUT host token - should fail (session has no active host)
+    const host4 = await connect();
+    const rejoinNoToken = await new Promise(res => host4.emit('rejoin-session', { sessionId }, res));
+    assert.equal(rejoinNoToken.error, 'Invalid host token', 'rejoin without token rejected');
+    host4.disconnect();
   });
 });

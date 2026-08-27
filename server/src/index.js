@@ -252,12 +252,17 @@ app.use((req, res, next) => {
   next();
 });
 
-// Prometheus metrics endpoint
+// Prometheus metrics endpoint - protected by token if configured
 app.get('/api/metrics', async (req, res) => {
+  const token = process.env.METRICS_TOKEN;
+  if (token && req.headers['authorization'] !== `Bearer ${token}`) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   try {
     res.set('Content-Type', register.contentType);
     res.end(await register.metrics());
   } catch (ex) {
+    logger.error('Metrics error', { error: ex.message });
     res.status(500).end(ex.message);
   }
 });
@@ -494,7 +499,9 @@ io.on('connection', (socket) => {
 
       socket.join(`session:${sessionId}`);
       socket.data.sessionId = sessionId;
+      socket.data.deviceId = 'host';
       socket.data.role = 'host';
+      socket.data.deviceId = socket.id; // Host uses socket.id as deviceId for disconnect handling
 
       const joinUrl = `${BASE_URL}/join/${sessionId}`;
       const qrCodeDataUrl = await QRCode.toDataURL(joinUrl);
@@ -513,15 +520,26 @@ io.on('connection', (socket) => {
   });
 
   socket.on('rejoin-session', async (...args) => {
-    const { sessionId } = args[0] || {};
+    const { sessionId, hostToken } = args[0] || {};
     const callback = typeof args[args.length - 1] === 'function' ? args[args.length - 1] : null;
     try {
       if (!sessionId || !SESSION_ID_RE.test(sessionId)) {
         return callback?.({ error: 'Invalid session id' });
       }
-      const session = await getSession(sessionId);
+const session = await getSession(sessionId);
       if (!session) {
         return callback?.({ error: 'Session not found' });
+      }
+
+      // If no active host (hostSocketId is null), require valid hostToken
+      // This prevents session hijacking after host disconnects
+      if (!session.hostSocketId) {
+        if (!hostToken || session.hostToken !== hostToken) {
+          return callback?.({ error: 'Invalid host token' });
+        }
+      } else {
+        // Active host already connected - reject additional host connections
+        return callback?.({ error: 'Host already connected' });
       }
 
       // Re-issue the host token so a stale holder loses host privileges
@@ -529,6 +547,7 @@ io.on('connection', (socket) => {
       session.hostSocketId = socket.id;
       socket.join(`session:${sessionId}`);
       socket.data.sessionId = sessionId;
+      socket.data.deviceId = 'host';
       socket.data.role = 'host';
       sessions.set(sessionId, session);
       await setSession(sessionId, session);
@@ -542,8 +561,6 @@ io.on('connection', (socket) => {
         joinUrl,
         qrCode: qrCodeDataUrl,
         hostToken: session.hostToken,
-        // FIXED: host client reads devices/playback state from this response;
-        // they were never sent so every host refresh showed an empty fleet
         devices: Array.from(session.devices.values()).map(d => ({
           id: d.id,
           role: d.role,
@@ -923,7 +940,11 @@ io.on('connection', (socket) => {
     if (!session) return;
 
     if (role === 'host') {
-      destroySession(sessionId);
+      // Host disconnected (e.g., page refresh) - keep session alive for rejoin
+      // Only clear hostSocketId; session will be destroyed by expiry or explicit end-session
+      session.hostSocketId = null;
+      await setSession(sessionId, session);
+      io.to(`session:${sessionId}`).emit('host-disconnected');
     } else {
       session.removeDevice(deviceId);
       io.to(`session:${sessionId}`).emit('device-left', { deviceId });
@@ -950,7 +971,7 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Session info endpoint
+// Session info endpoint (host-authorized via query or header)
 app.get('/api/sessions/:sessionId', async (req, res) => {
   const { sessionId } = req.params;
   if (!SESSION_ID_RE.test(sessionId)) {
@@ -959,6 +980,10 @@ app.get('/api/sessions/:sessionId', async (req, res) => {
   const session = await getSession(sessionId);
   if (!session) {
     return res.status(404).json({ error: 'Session not found' });
+  }
+  const hostToken = req.headers['x-host-token'] || req.query.hostToken;
+  if (!hostToken || hostToken !== session.hostToken) {
+    return res.status(403).json({ error: 'Host authorization required' });
   }
 
   res.json({

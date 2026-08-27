@@ -27,11 +27,11 @@ export function getIceServers() {
           credential: turnCredential
         }
       ],
-      iceCandidatePoolSize: 10,
-      iceTransportPolicy: 'relay'
+      iceCandidatePoolSize: 10
     };
   }
 
+  // No TURN configured - use STUN only, allow direct P2P
   return { iceServers: baseServers, iceCandidatePoolSize: 10 };
 }
 
