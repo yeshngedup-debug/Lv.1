@@ -8,6 +8,10 @@
    ============================================================ */
 
 @theme {
+  /* Base */
+  --color-white: #ffffff;
+  --color-black: #000000;
+
   /* Surfaces */
   --color-surface: #0a0a0f;
   --color-surface-subtle: #14141c;
@@ -166,26 +170,39 @@ body {
   }
 
   /* Button styles */
-  .gridline-btn {
+  .gridline-btn,
+  .gridline-btn-primary,
+  .gridline-btn-ghost,
+  .gridline-btn-danger {
     @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg
            font-medium text-sm transition-all duration-200
            cursor-pointer select-none whitespace-nowrap;
+  }
+  .gridline-btn {
     @apply bg-white/5 text-text-primary border border-white/10;
   }
-  .gridline-btn:hover {
-    @apply bg-white/8 border-white/20;
+  .gridline-btn:hover,
+  .gridline-btn-primary:hover,
+  .gridline-btn-ghost:hover,
+  .gridline-btn-danger:hover {
+    @apply bg-white/8;
     transform: translateY(-1px);
   }
-  .gridline-btn:active {
+  .gridline-btn:active,
+  .gridline-btn-primary:active,
+  .gridline-btn-ghost:active,
+  .gridline-btn-danger:active {
     transform: translateY(0) scale(0.98);
   }
-  .gridline-btn:disabled {
+  .gridline-btn:disabled,
+  .gridline-btn-primary:disabled,
+  .gridline-btn-ghost:disabled,
+  .gridline-btn-danger:disabled {
     @apply opacity-50 cursor-not-allowed;
     transform: none;
   }
 
   .gridline-btn-primary {
-    @apply gridline-btn;
     background: linear-gradient(135deg, var(--color-accent-violet), var(--color-accent-magenta));
     border-color: transparent;
   }
@@ -195,7 +212,6 @@ body {
   }
 
   .gridline-btn-ghost {
-    @apply gridline-btn;
     @apply bg-transparent border-transparent text-text-secondary;
   }
   .gridline-btn-ghost:hover {
@@ -203,7 +219,6 @@ body {
   }
 
   .gridline-btn-danger {
-    @apply gridline-btn;
     background: rgba(244, 63, 94, 0.1);
     border-color: rgba(244, 63, 94, 0.3);
     color: var(--color-accent-rose-light);
@@ -263,7 +278,11 @@ body {
 
   /* Device card */
   .device-card {
-    @apply gridline-card p-4 cursor-pointer transition-all duration-300;
+    @apply relative rounded-xl border border-white/5 overflow-hidden p-4 cursor-pointer transition-all duration-300;
+    background: linear-gradient(135deg, rgba(18, 18, 26, 0.92), rgba(14, 14, 20, 0.88));
+    backdrop-filter: blur(16px) saturate(180%);
+    -webkit-backdrop-filter: blur(16px) saturate(180%);
+    box-shadow: var(--shadow-glass);
   }
   .device-card.selected {
     border-color: var(--color-border-accent);

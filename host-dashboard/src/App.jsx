@@ -14,8 +14,7 @@ import { AudioBroadcast } from './components/audio/AudioBroadcast';
 import { CameraFeedTile } from './components/camera/CameraFeedTile';
 import { DeviceCard } from './components/device/DeviceCard';
 import { formatTime, formatFileSize } from './utils/audioUtils';
-import { useSessionStore, useDeviceStore, useAudioStore, useUIStore } from '../shared/stores';
-import '../shared/tailwind/gridline.css';
+import { useSessionStore, useDeviceStore, useAudioStore, useUIStore } from '@shared/stores';
 
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || window.location.origin;
 const MAX_AUDIO_SIZE = 50 * 1024 * 1024; // 50MB
@@ -351,8 +350,7 @@ function App() {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 ml-[${sidebarCollapsed ? '0' : '64px']} min-h-[100dvh] 
-                       overflow-x-hidden transition-margin-duration-300`}>
+<main className={`flex-1 min-h-[100dvh] overflow-x-hidden transition-margin-duration-300 ml-${sidebarCollapsed ? '0' : '64px'}`}>
         {/* Status Strip */}
         <div className="flex items-center justify-between px-4 py-2 bg-surface/95 backdrop-blur-xs 
                      border-b border-white/5 z-30 text-xs font-mono tracking-wide uppercase">
@@ -405,9 +403,9 @@ function App() {
             <div className="bg-surface/95 backdrop-blur-xs rounded-2xl p-6 w-full max-w-md 
                          border border-white/5 shadow-2xl animate-[fade-in_0.2s_ease-out]">
               <div className="text-center mb-6">
-                <h3 className="font-display text-xl text-text-primary mb-2">
-                  Share Session
-                </span>
+<h3 className="font-display text-xl text-text-primary mb-2">
+                    Share Session
+                  </h3>
                 <p className="text-sm text-text-tertiary">
                   Scan QR code or share link to join
                 </p>
@@ -505,9 +503,9 @@ function App() {
           {activeTab === 'overview' && (
             <>
               <div className="mb-6">
-                <h2 className="font-display text-2xl text-text-primary mb-2">
-                  Session Overview
-                </p>
+<h2 className="font-display text-2xl text-text-primary mb-2">
+                    Session Overview
+                  </h2>
                 <p className="text-sm text-text-tertiary">
                   Monitor and control your party AV fleet
                 </p>
@@ -659,7 +657,7 @@ function App() {
               <div className="mb-6">
                 <h2 className="font-display text-2xl text-text-primary mb-2">
                   Device Fleet
-                </p>
+                </h2>
                 <p className="text-sm text-text-tertiary">
                   Manage connected cameras and speakers
                 </p>
@@ -759,7 +757,7 @@ function App() {
               <div className="mb-6">
                 <h2 className="font-display text-2xl text-text-primary mb-2">
                   Settings
-                </p>
+                </h2>
                 <p className="text-sm text-text-tertiary">
                   Configure session preferences
                 </p>

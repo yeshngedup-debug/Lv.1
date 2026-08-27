@@ -1,4 +1,6 @@
+@import "tailwindcss";
 @import './fonts.css';
+@import '@shared/tailwind/gridline.css';
 
 /* ============================================================
    Iris SYNCD — Gridline Design System v2 (Host Dashboard)
