@@ -11,11 +11,29 @@
   "scripts": {
     "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w host-dashboard\" \"npm run dev -w participant-page\"",
     "build": "npm run build -w host-dashboard && npm run build -w participant-page",
-    "start": "node server/src/index.js",
-    "test": "node --test --test-force-exit tests/server.test.mjs",
+    "start": "node server/src/index.ts",
+    "test": "vitest run",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --noEmit -p server/tsconfig.json && tsc --noEmit -p host-dashboard/tsconfig.json && tsc --noEmit -p participant-page/tsconfig.json",
     "render-build": "npm install --workspaces && npm run build"
   },
+  "engines": {
+    "node": ">=24"
+  },
   "devDependencies": {
-    "concurrently": "^9.1.0"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.4.0",
+    "concurrently": "^10.0.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.11.0",
+    "prettier": "^3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0",
+    "vitest": "^4.1.11"
   }
 }

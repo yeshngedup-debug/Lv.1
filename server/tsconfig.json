@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
+    "types": ["node"],
+    "allowImportingTsExtensions": true,
+    // Transitional: legacy monolith cannot pass strict untouched.
+    // Re-enable strict module-by-module during the Phase 3 split.
+    "strict": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.js"]
+}

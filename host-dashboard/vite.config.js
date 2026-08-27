@@ -7,15 +7,12 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
-  plugins: [
-    react(),
-    tailwindcss()
-  ],
+  plugins: [react(), tailwindcss()],
   base: '/',
   resolve: {
     alias: {
-      '@shared': path.resolve(__dirname, '../shared')
-    }
+      '@shared': path.resolve(__dirname, '../shared'),
+    },
   },
   publicDir: 'public',
   server: {
@@ -24,13 +21,13 @@ export default defineConfig({
       '/socket.io': {
         target: 'http://localhost:3001',
         ws: true,
-        changeOrigin: true
+        changeOrigin: true,
       },
       '/api': {
         target: 'http://localhost:3001',
-        changeOrigin: true
-      }
-    }
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     rollupOptions: {
@@ -39,9 +36,9 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           motion: ['framer-motion'],
           socket: ['socket.io-client'],
-          icons: ['lucide-react']
-        }
-      }
-    }
-  }
+          icons: ['lucide-react'],
+        },
+      },
+    },
+  },
 });

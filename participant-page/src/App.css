@@ -52,9 +52,15 @@
   animation: pulse-ring 1.8s ease-in-out infinite;
 }
 @keyframes pulse-ring {
-  0%   { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55); }
-  70%  { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+  }
 }
 
 /* ===================== Buttons (shared) ===================== */
@@ -321,7 +327,7 @@
   flex-shrink: 0;
 }
 .toggle input::after {
-  content: "";
+  content: '';
   position: absolute;
   top: 2px;
   left: 2px;
@@ -329,7 +335,9 @@
   height: 16px;
   border-radius: 50%;
   background: var(--text-tertiary);
-  transition: transform var(--speed-fast) var(--ease), background var(--speed-fast) var(--ease);
+  transition:
+    transform var(--speed-fast) var(--ease),
+    background var(--speed-fast) var(--ease);
 }
 .toggle input:checked {
   background: var(--accent-violet);
@@ -500,12 +508,24 @@
   border-radius: 50%;
   background: var(--text-tertiary);
 }
-.connection-status.connected { color: var(--accent-green); }
-.connection-status.connected .status-dot { background: var(--accent-green); }
-.connection-status.disconnected { color: var(--accent-rose); }
-.connection-status.disconnected .status-dot { background: var(--accent-rose); }
-.connection-status.error { color: var(--accent-rose); }
-.connection-status.error .status-dot { background: var(--accent-rose); }
+.connection-status.connected {
+  color: var(--accent-green);
+}
+.connection-status.connected .status-dot {
+  background: var(--accent-green);
+}
+.connection-status.disconnected {
+  color: var(--accent-rose);
+}
+.connection-status.disconnected .status-dot {
+  background: var(--accent-rose);
+}
+.connection-status.error {
+  color: var(--accent-rose);
+}
+.connection-status.error .status-dot {
+  background: var(--accent-rose);
+}
 
 /* Push-to-talk banner */
 .ptt-banner {
@@ -513,8 +533,14 @@
   animation: banner-in var(--speed-normal) var(--ease);
 }
 @keyframes banner-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Speaker view */
@@ -553,13 +579,33 @@
   background: linear-gradient(180deg, var(--accent-violet), var(--accent-cyan));
   animation: eq-dance 0.7s ease-in-out infinite alternate;
 }
-.playing-indicator .bar:nth-child(1) { height: 60%; animation-delay: 0s;    animation-duration: 0.62s; }
-.playing-indicator .bar:nth-child(2) { height: 95%; animation-delay: 0.15s; animation-duration: 0.51s; }
-.playing-indicator .bar:nth-child(3) { height: 40%; animation-delay: 0.3s;  animation-duration: 0.74s; }
-.playing-indicator .bar:nth-child(4) { height: 80%; animation-delay: 0.45s; animation-duration: 0.58s; }
+.playing-indicator .bar:nth-child(1) {
+  height: 60%;
+  animation-delay: 0s;
+  animation-duration: 0.62s;
+}
+.playing-indicator .bar:nth-child(2) {
+  height: 95%;
+  animation-delay: 0.15s;
+  animation-duration: 0.51s;
+}
+.playing-indicator .bar:nth-child(3) {
+  height: 40%;
+  animation-delay: 0.3s;
+  animation-duration: 0.74s;
+}
+.playing-indicator .bar:nth-child(4) {
+  height: 80%;
+  animation-delay: 0.45s;
+  animation-duration: 0.58s;
+}
 @keyframes eq-dance {
-  from { transform: scaleY(0.45); }
-  to   { transform: scaleY(1); }
+  from {
+    transform: scaleY(0.45);
+  }
+  to {
+    transform: scaleY(1);
+  }
 }
 .speaker-hint {
   font-size: 0.725rem;
@@ -612,9 +658,15 @@
   animation: live-pulse 1.8s ease-in-out infinite;
 }
 @keyframes live-pulse {
-  0%   { box-shadow: 0 0 0 0 rgba(244, 61, 94, 0.55); }
-  70%  { box-shadow: 0 0 0 6px rgba(244, 61, 94, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(244, 61, 94, 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(244, 61, 94, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(244, 61, 94, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(244, 61, 94, 0);
+  }
 }
 .recording-indicator {
   position: absolute;
@@ -637,8 +689,13 @@
   animation: rec-blink 1s ease-in-out infinite;
 }
 @keyframes rec-blink {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.25; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
 }
 
 /* Camera controls dock */
@@ -725,8 +782,12 @@
 
 /* Safe area & small screens */
 @media (max-width: 360px) {
-  .permission-buttons { flex-direction: column; }
-  .feature-toggles { gap: 0.9rem; }
+  .permission-buttons {
+    flex-direction: column;
+  }
+  .feature-toggles {
+    gap: 0.9rem;
+  }
 }
 
 /* Focus styles for accessibility */

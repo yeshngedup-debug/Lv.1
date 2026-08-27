@@ -20,19 +20,19 @@ Iris SYNCD uses a custom signaling layer built on **Socket.IO** with **raw WebRT
 
 ## Signaling Events (Socket.IO)
 
-| Event | Direction | Payload | Purpose |
-|---|---|---|---|
-| `create-session` | Host → Server | `{}` | Create session, get `sessionId`, `joinUrl`, `hostToken` |
-| `rejoin-session` | Host → Server | `{sessionId}` | Reclaim host privileges after reload |
-| `join-session` | Device → Server | `{sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled}` | Join as camera/speaker/both |
-| `camera-offer` | Device → Host | `{deviceId, offer}` | WebRTC offer from participant |
-| `camera-answer` | Host → Device | `{deviceId, answer}` | WebRTC answer from host |
-| `ice-candidate` | Both → Both | `{candidate, fromDeviceId, targetDeviceId}` | ICE candidates (namespaced) |
-| `device-cameras` | Device → Host | `{cameras: []}` | Enumerate available cameras |
-| `camera-switched` | Device → Host | `{cameraId}` | Notify active camera change |
-| `switch-camera` | Host → Device | `{deviceId, cameraId}` | Host requests camera switch |
-| `push-to-talk-offer/answer` | Host ↔ Device | `{deviceId, offer/answer}` | Dedicated audio PC for PTT |
-| `playback-state` | Host → All | `{isPlaying, trackId, position}` | Server-authoritative playback |
+| Event                       | Direction       | Payload                                                          | Purpose                                                 |
+| --------------------------- | --------------- | ---------------------------------------------------------------- | ------------------------------------------------------- |
+| `create-session`            | Host → Server   | `{}`                                                             | Create session, get `sessionId`, `joinUrl`, `hostToken` |
+| `rejoin-session`            | Host → Server   | `{sessionId}`                                                    | Reclaim host privileges after reload                    |
+| `join-session`              | Device → Server | `{sessionId, role, nickname, isCameraEnabled, isSpeakerEnabled}` | Join as camera/speaker/both                             |
+| `camera-offer`              | Device → Host   | `{deviceId, offer}`                                              | WebRTC offer from participant                           |
+| `camera-answer`             | Host → Device   | `{deviceId, answer}`                                             | WebRTC answer from host                                 |
+| `ice-candidate`             | Both → Both     | `{candidate, fromDeviceId, targetDeviceId}`                      | ICE candidates (namespaced)                             |
+| `device-cameras`            | Device → Host   | `{cameras: []}`                                                  | Enumerate available cameras                             |
+| `camera-switched`           | Device → Host   | `{cameraId}`                                                     | Notify active camera change                             |
+| `switch-camera`             | Host → Device   | `{deviceId, cameraId}`                                           | Host requests camera switch                             |
+| `push-to-talk-offer/answer` | Host ↔ Device   | `{deviceId, offer/answer}`                                       | Dedicated audio PC for PTT                              |
+| `playback-state`            | Host → All      | `{isPlaying, trackId, position}`                                 | Server-authoritative playback                           |
 
 ## Session State
 
@@ -58,33 +58,34 @@ class Session {
 
 ## Device Roles
 
-| Role | Camera | Audio Playback | Use Case |
-|---|---|---|---|
-| `camera` | ✅ | ❌ | Phone as dedicated camera |
-| `speaker` | ❌ | ✅ | Phone as dedicated speaker |
-| `device` | ✅ (toggle) | ✅ (toggle) | Single phone doing both |
+| Role      | Camera      | Audio Playback | Use Case                   |
+| --------- | ----------- | -------------- | -------------------------- |
+| `camera`  | ✅          | ❌             | Phone as dedicated camera  |
+| `speaker` | ❌          | ✅             | Phone as dedicated speaker |
+| `device`  | ✅ (toggle) | ✅ (toggle)    | Single phone doing both    |
 
 ## Scaling Considerations
 
-| Concern | Current | Future |
-|---|---|---|
-| Horizontal scaling | Socket.IO Redis adapter (optional) | Sticky sessions required |
-| Session store | In-memory Map + optional Redis | Redis-only with TTL |
-| Media relay | None (P2P) | Consider SFU for >20 peers |
-| Load balancing | Render single instance | Multiple regions + geo-DNS |
+| Concern            | Current                            | Future                     |
+| ------------------ | ---------------------------------- | -------------------------- |
+| Horizontal scaling | Socket.IO Redis adapter (optional) | Sticky sessions required   |
+| Session store      | In-memory Map + optional Redis     | Redis-only with TTL        |
+| Media relay        | None (P2P)                         | Consider SFU for >20 peers |
+| Load balancing     | Render single instance             | Multiple regions + geo-DNS |
 
 ## Why Not LiveKit / Mediasoup?
 
-| Factor | Decision |
-|---|---|
-| Complexity | Avoided SFU complexity for <20 peer sessions |
-| Cost | Zero infrastructure cost (P2P) |
-| Latency | P2P is lower latency for small meshes |
-| Flexibility | Full control over signaling + ICE logic |
+| Factor      | Decision                                     |
+| ----------- | -------------------------------------------- |
+| Complexity  | Avoided SFU complexity for <20 peer sessions |
+| Cost        | Zero infrastructure cost (P2P)               |
+| Latency     | P2P is lower latency for small meshes        |
+| Flexibility | Full control over signaling + ICE logic      |
 
 ## Adding an SFU Later
 
 If peer count grows beyond ~20, migrate to **Mediasoup** or **LiveKit**:
+
 1. Replace Socket.IO signaling with SFU protocol
 2. Host becomes SFU producer; participants become consumers
 3. `PeerConnectionManager` becomes `ConsumerManager`

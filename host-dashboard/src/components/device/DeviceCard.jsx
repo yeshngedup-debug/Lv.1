@@ -12,17 +12,19 @@ export const DeviceCard = React.memo(function DeviceCard({
   removeDevice,
   motionDetectionEnabled,
   setMotionDetectionEnabled,
-  peerConnectionsRef
+  peerConnectionsRef,
 }) {
-  const isCamera = (device.role === 'camera' || device.role === 'device') && device.isCameraEnabled !== false;
-  const isSpeaker = (device.role === 'speaker' || device.role === 'device') && device.isSpeakerEnabled !== false;
+  const isCamera =
+    (device.role === 'camera' || device.role === 'device') && device.isCameraEnabled !== false;
+  const isSpeaker =
+    (device.role === 'speaker' || device.role === 'device') && device.isSpeakerEnabled !== false;
   const isCombined = device.role === 'device';
   const pc = peerConnectionsRef?.current?.get(device.id);
   const isConnected = pc?.connectionState === 'connected';
 
   return (
     <article
-      className={`device-card ${isSelected ? 'selected' : ''} ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}
+      className={`device-card ${isSelected ? 'selected' : ''} ${isCombined ? 'combined' : isCamera ? 'camera' : 'speaker'}`}
       onClick={onClick}
       data-device-id={device.id}
     >
@@ -42,9 +44,13 @@ export const DeviceCard = React.memo(function DeviceCard({
         <div className="device-meta">
           <h3 className="device-name">{device.nickname}</h3>
           <div className="device-status">
-            <span className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}></span>
-            <span className={`device-role-badge ${isCombined ? 'combined' : (isCamera ? 'camera' : 'speaker')}`}>
-              {isCombined ? 'Device' : (isCamera ? 'Camera' : 'Speaker')}
+            <span
+              className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`}
+            ></span>
+            <span
+              className={`device-role-badge ${isCombined ? 'combined' : isCamera ? 'camera' : 'speaker'}`}
+            >
+              {isCombined ? 'Device' : isCamera ? 'Camera' : 'Speaker'}
             </span>
           </div>
         </div>
@@ -138,10 +144,12 @@ export const DeviceCard = React.memo(function DeviceCard({
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                setMotionDetectionEnabled(prev => !prev);
+                setMotionDetectionEnabled((prev) => !prev);
               }}
               className={`btn btn-${motionDetectionEnabled ? 'success' : 'secondary'} btn-sm`}
-              title={motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'}
+              title={
+                motionDetectionEnabled ? 'Disable motion detection' : 'Enable motion detection'
+              }
             >
               {motionDetectionEnabled ? <Eye size={14} /> : <BellOff size={14} />}
               <span>{motionDetectionEnabled ? 'Motion ON' : 'Motion OFF'}</span>

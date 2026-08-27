@@ -20,7 +20,7 @@ export const AudioBroadcast = ({
   startPushToTalk,
   stopPushToTalk,
   formatTime,
-  formatFileSize
+  formatFileSize,
 }) => {
   return (
     <>
@@ -62,8 +62,8 @@ export const AudioBroadcast = ({
                 {uploading
                   ? 'Uploading to server…'
                   : uploadedTrack
-                  ? `${audioFile.type} · ${formatFileSize(audioFile.size)} · ready for fleet`
-                  : `${audioFile.type} · ${formatFileSize(audioFile.size)}`}
+                    ? `${audioFile.type} · ${formatFileSize(audioFile.size)} · ready for fleet`
+                    : `${audioFile.type} · ${formatFileSize(audioFile.size)}`}
               </span>
             )}
           </div>
@@ -90,17 +90,29 @@ export const AudioBroadcast = ({
 
               <div className="playback-buttons">
                 {isPlaying ? (
-                  <button onClick={pausePlayback} className="gridline-btn-primary" disabled={reconnecting || !uploadedTrack}>
+                  <button
+                    onClick={pausePlayback}
+                    className="gridline-btn-primary"
+                    disabled={reconnecting || !uploadedTrack}
+                  >
                     <Pause size={14} />
                     <span>Pause</span>
                   </button>
                 ) : (
-                  <button onClick={startPlayback} className="gridline-btn-primary" disabled={reconnecting || !audioUrl || !uploadedTrack || uploading}>
+                  <button
+                    onClick={startPlayback}
+                    className="gridline-btn-primary"
+                    disabled={reconnecting || !audioUrl || !uploadedTrack || uploading}
+                  >
                     <Play size={14} />
                     <span>{uploading ? 'Uploading…' : 'Play Track'}</span>
                   </button>
                 )}
-                <button onClick={resumePlayback} className="gridline-btn-ghost" disabled={reconnecting || isPlaying || !uploadedTrack}>
+                <button
+                  onClick={resumePlayback}
+                  className="gridline-btn-ghost"
+                  disabled={reconnecting || isPlaying || !uploadedTrack}
+                >
                   <RotateCcw size={14} />
                   <span>Resume</span>
                 </button>
@@ -109,7 +121,15 @@ export const AudioBroadcast = ({
           )}
 
           <div className="push-to-talk" style={{ marginTop: '1rem' }}>
-            <h4 style={{ fontSize: '0.82rem', marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Host Push-to-Talk Broadcast</h4>
+            <h4
+              style={{
+                fontSize: '0.82rem',
+                marginBottom: '0.5rem',
+                color: 'var(--text-secondary)',
+              }}
+            >
+              Host Push-to-Talk Broadcast
+            </h4>
             <button
               onMouseDown={startPushToTalk}
               onMouseUp={stopPushToTalk}

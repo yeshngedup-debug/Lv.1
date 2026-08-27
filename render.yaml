@@ -6,7 +6,7 @@ services:
   - type: web
     name: iris-syncd
     runtime: node
-    plan: free                 # upgrade for always-on + persistent disk
+    plan: free # upgrade for always-on + persistent disk
     buildCommand: npm install && npm run build
     startCommand: npm start
     healthCheckPath: /api/health
@@ -21,7 +21,7 @@ services:
       - key: CORS_ORIGIN
         value: https://iris-syncd.onrender.com
       - key: SESSION_TIMEOUT
-        value: '3600000'       # 1 hour
+        value: '3600000' # 1 hour
       - key: LOG_LEVEL
         value: info
       - key: UPLOAD_RATE_LIMIT_MAX
@@ -36,6 +36,8 @@ services:
       # Observability
       - key: SENTRY_DSN
         sync: false
+      - key: METRICS_TOKEN
+        generateValue: true
       # Optional: provision a Render Redis instance and paste its internal URL
       # to enable horizontal scaling via the Socket.IO Redis adapter.
       # NOTE: sessions also live in an in-process Map; multi-instance mode

@@ -30,14 +30,14 @@ export default defineConfig({
             src: 'favicon.svg',
             sizes: 'any',
             type: 'image/svg+xml',
-            purpose: 'any maskable'
+            purpose: 'any maskable',
           },
           {
             src: 'favicon.ico',
             sizes: '48x48',
-            type: 'image/x-icon'
-          }
-        ]
+            type: 'image/x-icon',
+          },
+        ],
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,ico,png,svg,woff2}'],
@@ -49,19 +49,19 @@ export default defineConfig({
               cacheName: 'api-cache',
               expiration: {
                 maxEntries: 10,
-                maxAgeSeconds: 60 * 60
-              }
-            }
-          }
-        ]
-      }
-    })
+                maxAgeSeconds: 60 * 60,
+              },
+            },
+          },
+        ],
+      },
+    }),
   ],
   base: '/join/',
   resolve: {
     alias: {
-      '@shared': path.resolve(__dirname, '../shared')
-    }
+      '@shared': path.resolve(__dirname, '../shared'),
+    },
   },
   server: {
     port: 5174,
@@ -69,13 +69,13 @@ export default defineConfig({
       '/socket.io': {
         target: 'http://localhost:3001',
         ws: true,
-        changeOrigin: true
+        changeOrigin: true,
       },
       '/api': {
         target: 'http://localhost:3001',
-        changeOrigin: true
-      }
-    }
+        changeOrigin: true,
+      },
+    },
   },
   build: {
     rollupOptions: {
@@ -84,9 +84,9 @@ export default defineConfig({
           vendor: ['react', 'react-dom'],
           motion: ['framer-motion'],
           socket: ['socket.io-client'],
-          icons: ['lucide-react']
-        }
-      }
-    }
-  }
+          icons: ['lucide-react'],
+        },
+      },
+    },
+  },
 });

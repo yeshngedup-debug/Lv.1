@@ -11,7 +11,7 @@ const updateSW = registerSW({
   },
   onRegistrationError(registrationError) {
     console.error('SW registration error:', registrationError);
-  }
+  },
 });
 
 // Media Session API for background audio

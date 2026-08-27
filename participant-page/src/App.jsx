@@ -1,8 +1,21 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import io from 'socket.io-client';
 import {
-  Radio, Speaker, Video, ArrowRight, ArrowLeft, Shield, Check, Music, Power,
-  Circle, Square, Download, Trash2, Clock, AlertCircle
+  Radio,
+  Speaker,
+  Video,
+  ArrowRight,
+  ArrowLeft,
+  Shield,
+  Check,
+  Music,
+  Power,
+  Circle,
+  Square,
+  Download,
+  Trash2,
+  Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { AudioSync } from './audioSync';
 import { requestWakeLock, releaseWakeLock } from './sw';
@@ -56,11 +69,11 @@ function App() {
   const wakeLockRef = useRef(null);
 
   // Push-to-talk receive side + clock sync + mic track ownership
-  const pttPcRef = useRef(null);          // PC receiving host push-to-talk audio
-  const hostAudioRef = useRef(null);      // <audio> that plays host PTT stream
+  const pttPcRef = useRef(null); // PC receiving host push-to-talk audio
+  const hostAudioRef = useRef(null); // <audio> that plays host PTT stream
   const [hostTalking, setHostTalking] = useState(false);
-  const clockOffsetRef = useRef(0);       // (server - client) ms, from clock-sync
-  const micStreamRef = useRef(null);      // separate mic stream, not part of any camera stream
+  const clockOffsetRef = useRef(0); // (server - client) ms, from clock-sync
+  const micStreamRef = useRef(null); // separate mic stream, not part of any camera stream
 
   const extractSessionIdFromUrl = useCallback(() => {
     const pathParts = window.location.pathname.split('/');
@@ -109,7 +122,7 @@ function App() {
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
-      timeout: 20000
+      timeout: 20000,
     });
 
     newSocket.on('connect', () => {
@@ -121,19 +134,23 @@ function App() {
       // Rejoin session if we had one
       const { sessionId: sId, role: r, nickname: nick, isJoined: joined } = stateRef.current;
       if (sId && joined && r) {
-        newSocket.emit('join-session', { sessionId: sId, role: r, nickname: nick, deviceId: deviceIdRef.current }, (response) => {
-          if (response.error) {
-            console.error('Rejoin failed:', response.error);
-            setIsJoined(false);
-            setRole(null);
-          } else if (response.deviceId) {
-            deviceIdRef.current = response.deviceId;
-            if (r === 'camera' && streamRef.current) {
-              stopCameraStreaming();
-              startCameraStreaming();
+        newSocket.emit(
+          'join-session',
+          { sessionId: sId, role: r, nickname: nick, deviceId: deviceIdRef.current },
+          (response) => {
+            if (response.error) {
+              console.error('Rejoin failed:', response.error);
+              setIsJoined(false);
+              setRole(null);
+            } else if (response.deviceId) {
+              deviceIdRef.current = response.deviceId;
+              if (r === 'camera' && streamRef.current) {
+                stopCameraStreaming();
+                startCameraStreaming();
+              }
             }
-          }
-        });
+          },
+        );
       }
     });
 
@@ -197,7 +214,9 @@ function App() {
       // Initialize audio sync for the combined 'device' role when speaker output is on
       // FIXED: gated on role === 'speaker' which can never be true (UI only offers 'device')
       if (audioRef.current && !audioSyncRef.current && isSpeakerEnabled) {
-        audioSyncRef.current = new AudioSync(audioRef.current, socket, { clockOffsetMs: clockOffsetRef.current });
+        audioSyncRef.current = new AudioSync(audioRef.current, socket, {
+          clockOffsetMs: clockOffsetRef.current,
+        });
       }
     });
 
@@ -237,11 +256,13 @@ function App() {
           pttPcRef.current.close();
           pttPcRef.current = null;
         }
-        const pc = new PeerConnectionManager(socket, 'host', false, { iceEventName: 'ptt-ice-candidate' });
+        const pc = new PeerConnectionManager(socket, 'host', false, {
+          iceEventName: 'ptt-ice-candidate',
+        });
         pc.onRemoteStream = (stream) => {
           if (hostAudioRef.current) {
             hostAudioRef.current.srcObject = stream;
-            hostAudioRef.current.play().catch(err => console.warn('PTT playback blocked:', err));
+            hostAudioRef.current.play().catch((err) => console.warn('PTT playback blocked:', err));
           }
         };
         const answer = await pc.handleOffer(offer);
@@ -297,17 +318,17 @@ function App() {
         peerConnectionRef.current = null;
       }
       if (streamRef.current) {
-        streamRef.current.getTracks().forEach(t => t.stop());
+        streamRef.current.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       }
       if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
         micStreamRef.current = null;
       }
     };
   }, [socket, role, isSpeakerEnabled]);
 
-const requestMediaPermission = async (needsCamera, needsAudio) => {
+  const requestMediaPermission = async (needsCamera, needsAudio) => {
     try {
       if (!needsCamera && needsAudio) {
         // Audio only - verify audio context can be created
@@ -327,10 +348,10 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
             audio: {
               echoCancellation: true,
               noiseSuppression: true,
-              autoGainControl: true
-            }
+              autoGainControl: true,
+            },
           });
-          testStream.getTracks().forEach(t => t.stop());
+          testStream.getTracks().forEach((t) => t.stop());
         } catch (err) {
           console.warn('Initial permission check failed:', err);
           throw err;
@@ -348,7 +369,9 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
       setMediaPermission('denied');
 
       if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-        setError('Camera/microphone permission denied. Please allow access in browser settings and try again.');
+        setError(
+          'Camera/microphone permission denied. Please allow access in browser settings and try again.',
+        );
       } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
         setError('No camera/microphone found. Please connect a device and try again.');
       } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
@@ -363,30 +386,34 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
   };
 
   // NTP-style clock sync: median of round-trip samples estimates (server - client) skew
-  const syncClock = useCallback(() => new Promise((resolve) => {
-    if (!socket) return resolve(0);
-    const samples = [];
-    let attempts = 0;
-    const tick = () => {
-      const t0 = Date.now();
-      socket.timeout(2000).emit('clock-sync', (err, serverTime) => {
-        const t1 = Date.now();
-        if (!err && typeof serverTime === 'number') {
-          samples.push(serverTime - (t0 + t1) / 2);
-        }
-        attempts += 1;
-        if (attempts < 5) {
-          tick();
-        } else {
-          samples.sort((a, b) => a - b);
-          clockOffsetRef.current = samples.length ? samples[Math.floor(samples.length / 2)] : 0;
-          console.log('Clock offset (ms):', Math.round(clockOffsetRef.current));
-          resolve(clockOffsetRef.current);
-        }
-      });
-    };
-    tick();
-  }), [socket]);
+  const syncClock = useCallback(
+    () =>
+      new Promise((resolve) => {
+        if (!socket) return resolve(0);
+        const samples = [];
+        let attempts = 0;
+        const tick = () => {
+          const t0 = Date.now();
+          socket.timeout(2000).emit('clock-sync', (err, serverTime) => {
+            const t1 = Date.now();
+            if (!err && typeof serverTime === 'number') {
+              samples.push(serverTime - (t0 + t1) / 2);
+            }
+            attempts += 1;
+            if (attempts < 5) {
+              tick();
+            } else {
+              samples.sort((a, b) => a - b);
+              clockOffsetRef.current = samples.length ? samples[Math.floor(samples.length / 2)] : 0;
+              console.log('Clock offset (ms):', Math.round(clockOffsetRef.current));
+              resolve(clockOffsetRef.current);
+            }
+          });
+        };
+        tick();
+      }),
+    [socket],
+  );
 
   const joinSession = async () => {
     if (!socket || !sessionId || !role) return;
@@ -398,46 +425,54 @@ const requestMediaPermission = async (needsCamera, needsAudio) => {
     const hasPermission = await requestMediaPermission(needsCamera, needsAudio);
     if (!hasPermission) return;
 
-    socket.emit('join-session', {
-      sessionId,
-      role,
-      nickname,
-      isCameraEnabled,
-      isSpeakerEnabled
-    }, async (response) => {
-      if (response.error) {
-        setError(response.error);
-        return;
-      }
-
-      deviceIdRef.current = response.deviceId;
-      setIsJoined(true);
-      setSessionId(sessionId);
-
-      // Sync clocks before playback events can arrive so drift math is correct
-      await syncClock();
-
-      if (isCameraEnabled) {
-        startCameraStreaming();
-      } else {
-        // If camera isn't enabled, ensure we still inform host of available cameras for PTZ/setup
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(d => d.kind === 'videoinput');
-        socket.emit('device-cameras', { cameras: videoDevices.map(d => ({ id: d.deviceId, label: d.label })) });
-      }
-
-      if (isSpeakerEnabled) {
-        // Initialize audio sync for speaker output (guard against duplicates)
-        if (audioRef.current && !audioSyncRef.current) {
-          audioSyncRef.current = new AudioSync(audioRef.current, socket, { clockOffsetMs: clockOffsetRef.current });
+    socket.emit(
+      'join-session',
+      {
+        sessionId,
+        role,
+        nickname,
+        isCameraEnabled,
+        isSpeakerEnabled,
+      },
+      async (response) => {
+        if (response.error) {
+          setError(response.error);
+          return;
         }
-      }
-    });
+
+        deviceIdRef.current = response.deviceId;
+        setIsJoined(true);
+        setSessionId(sessionId);
+
+        // Sync clocks before playback events can arrive so drift math is correct
+        await syncClock();
+
+        if (isCameraEnabled) {
+          startCameraStreaming();
+        } else {
+          // If camera isn't enabled, ensure we still inform host of available cameras for PTZ/setup
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoDevices = devices.filter((d) => d.kind === 'videoinput');
+          socket.emit('device-cameras', {
+            cameras: videoDevices.map((d) => ({ id: d.deviceId, label: d.label })),
+          });
+        }
+
+        if (isSpeakerEnabled) {
+          // Initialize audio sync for speaker output (guard against duplicates)
+          if (audioRef.current && !audioSyncRef.current) {
+            audioSyncRef.current = new AudioSync(audioRef.current, socket, {
+              clockOffsetMs: clockOffsetRef.current,
+            });
+          }
+        }
+      },
+    );
   };
 
   const answerHandlerRef = useRef(null);
 
-const startCameraStreaming = async () => {
+  const startCameraStreaming = async () => {
     if (!socket) return;
 
     const currentDeviceId = deviceIdRef.current;
@@ -457,8 +492,8 @@ const startCameraStreaming = async () => {
     }
 
     // Stop any existing camera streams
-    Object.values(allCameraStreams).forEach(stream => {
-      stream.getTracks().forEach(t => t.stop());
+    Object.values(allCameraStreams).forEach((stream) => {
+      stream.getTracks().forEach((t) => t.stop());
     });
     setAllCameraStreams({});
 
@@ -471,26 +506,29 @@ const startCameraStreaming = async () => {
         initialStream = await navigator.mediaDevices.getUserMedia({
           video: {
             width: { ideal: 1280, max: 1920 },
-            height: { ideal: 720, max: 1080 }
+            height: { ideal: 720, max: 1080 },
           },
-          audio: false
+          audio: false,
         });
       } catch (err) {
         console.error('Failed to get initial camera stream:', err);
-        throw new Error('Could not access camera. Please check permissions.');
+        throw new Error('Could not access camera. Please check permissions.', { cause: err });
       }
 
       // Now enumerate devices - labels should be populated after getUserMedia
       const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(d => d.kind === 'videoinput');
+      const videoDevices = devices.filter((d) => d.kind === 'videoinput');
 
       if (videoDevices.length === 0) {
         setError('No cameras found');
-        if (initialStream) initialStream.getTracks().forEach(t => t.stop());
+        if (initialStream) initialStream.getTracks().forEach((t) => t.stop());
         return;
       }
 
-      console.log('Found cameras:', videoDevices.map(d => ({ id: d.deviceId, label: d.label })));
+      console.log(
+        'Found cameras:',
+        videoDevices.map((d) => ({ id: d.deviceId, label: d.label })),
+      );
 
       // Get stream from each camera with fallbacks.
       // Only the ACTIVE camera's track is sent over WebRTC (switched via replaceTrack);
@@ -500,7 +538,7 @@ const startCameraStreaming = async () => {
 
       // Release initial stream - we'll try individual cameras
       if (initialStream) {
-        initialStream.getTracks().forEach(t => t.stop());
+        initialStream.getTracks().forEach((t) => t.stop());
         initialStream = null;
       }
 
@@ -510,9 +548,9 @@ const startCameraStreaming = async () => {
             video: {
               deviceId: { exact: device.deviceId },
               width: { ideal: 1280, max: 1920 },
-              height: { ideal: 720, max: 1080 }
+              height: { ideal: 720, max: 1080 },
             },
-            audio: false
+            audio: false,
           });
 
           const videoTrack = stream.getVideoTracks()[0];
@@ -527,7 +565,7 @@ const startCameraStreaming = async () => {
           try {
             const stream = await navigator.mediaDevices.getUserMedia({
               video: { deviceId: { exact: device.deviceId } },
-              audio: false
+              audio: false,
             });
             const videoTrack = stream.getVideoTracks()[0];
             if (videoTrack) {
@@ -536,7 +574,10 @@ const startCameraStreaming = async () => {
               gotVideoFromIndividual = true;
             }
           } catch (err2) {
-            console.warn(`Failed to get stream from camera ${device.deviceId} with relaxed constraints:`, err2);
+            console.warn(
+              `Failed to get stream from camera ${device.deviceId} with relaxed constraints:`,
+              err2,
+            );
           }
         }
       }
@@ -546,7 +587,7 @@ const startCameraStreaming = async () => {
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 } },
-            audio: false
+            audio: false,
           });
           const videoTrack = stream.getVideoTracks()[0];
           if (videoTrack) {
@@ -565,13 +606,13 @@ const startCameraStreaming = async () => {
 
       // Microphone lives in its own stream so it survives camera switches
       if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(t => t.stop());
+        micStreamRef.current.getTracks().forEach((t) => t.stop());
       }
       let micTrack = null;
       try {
         const audioStream = await navigator.mediaDevices.getUserMedia({
           audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-          video: false
+          video: false,
         });
         micStreamRef.current = audioStream;
         micTrack = audioStream.getAudioTracks()[0] || null;
@@ -582,9 +623,9 @@ const startCameraStreaming = async () => {
       setAllCameraStreams(cameraStreams);
 
       // Update available cameras list
-      const camList = videoDevices.map(d => ({
+      const camList = videoDevices.map((d) => ({
         id: d.deviceId,
-        label: d.label || `Camera ${d.deviceId.slice(0, 8)}`
+        label: d.label || `Camera ${d.deviceId.slice(0, 8)}`,
       }));
       setAvailableCameras(camList);
 
@@ -606,11 +647,16 @@ const startCameraStreaming = async () => {
       }
 
       // Use PeerConnectionManager for WebRTC (fixes CR-02)
-      const pc = new PeerConnectionManager(socket, 'host', true);
+      const pc = new PeerConnectionManager(socket, 'host', true, {
+        iceEventName: 'camera-ice-candidate',
+      });
       pc.addLocalStream(outgoingStream);
 
       const sentTracks = outgoingStream.getTracks();
-      console.log('Sending tracks:', sentTracks.map(t => ({ kind: t.kind, label: t.label, enabled: t.enabled })));
+      console.log(
+        'Sending tracks:',
+        sentTracks.map((t) => ({ kind: t.kind, label: t.label, enabled: t.enabled })),
+      );
 
       pc.onConnectionStateChange = (state) => {
         console.log('Camera connection state:', state);
@@ -630,7 +676,7 @@ const startCameraStreaming = async () => {
 
       socket.emit('camera-offer', {
         deviceId: currentDeviceId,
-        offer
+        offer,
       });
 
       const handleAnswer = async ({ answer }) => {
@@ -658,7 +704,6 @@ const startCameraStreaming = async () => {
       } catch (err) {
         console.log('Wake Lock not supported');
       }
-
     } catch (err) {
       console.error('Error starting camera streaming:', err);
       setError('Failed to start camera streaming');
@@ -677,18 +722,18 @@ const startCameraStreaming = async () => {
     }
 
     // Stop all individual camera streams
-    Object.values(allCameraStreams).forEach(stream => {
-      stream.getTracks().forEach(track => track.stop());
+    Object.values(allCameraStreams).forEach((stream) => {
+      stream.getTracks().forEach((track) => track.stop());
     });
     setAllCameraStreams({});
 
     if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach(track => track.stop());
+      micStreamRef.current.getTracks().forEach((track) => track.stop());
       micStreamRef.current = null;
     }
 
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach((track) => track.stop());
       streamRef.current = null;
     }
 
@@ -721,53 +766,64 @@ const startCameraStreaming = async () => {
       return;
     }
 
-    const videoSender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+    const videoSender = pc.getSenders().find((s) => s.track && s.track.kind === 'video');
     if (!videoSender) {
       console.warn('Cannot switch camera: no video sender (negotiation may still be in progress)');
       return;
     }
 
-    videoSender.replaceTrack(nextTrack).then(() => {
-      setActiveCameraId(cameraId);
+    videoSender
+      .replaceTrack(nextTrack)
+      .then(() => {
+        setActiveCameraId(cameraId);
 
-      // Preview mirrors what is actually being sent
-      if (videoRef.current) {
-        videoRef.current.srcObject = new MediaStream([nextTrack]);
-        videoRef.current.play().catch(() => {});
-      }
-
-      // Keep the outgoing/recording stream pointing at the new track
-      if (streamRef.current) {
-        const oldTrack = streamRef.current.getVideoTracks()[0];
-        if (oldTrack && oldTrack !== nextTrack) {
-          streamRef.current.removeTrack(oldTrack);
+        // Preview mirrors what is actually being sent
+        if (videoRef.current) {
+          videoRef.current.srcObject = new MediaStream([nextTrack]);
+          videoRef.current.play().catch(() => {});
         }
-        if (!streamRef.current.getVideoTracks().includes(nextTrack)) {
-          streamRef.current.addTrack(nextTrack);
-        }
-      }
 
-      socket.emit('camera-switched', { cameraId });
-      console.log('Switched active camera to:', cameraId);
-    }).catch(err => {
-      console.error('replaceTrack failed:', err);
-    });
+        // Keep the outgoing/recording stream pointing at the new track
+        if (streamRef.current) {
+          const oldTrack = streamRef.current.getVideoTracks()[0];
+          if (oldTrack && oldTrack !== nextTrack) {
+            streamRef.current.removeTrack(oldTrack);
+          }
+          if (!streamRef.current.getVideoTracks().includes(nextTrack)) {
+            streamRef.current.addTrack(nextTrack);
+          }
+        }
+
+        socket.emit('camera-switched', { cameraId });
+        console.log('Switched active camera to:', cameraId);
+      })
+      .catch((err) => {
+        console.error('replaceTrack failed:', err);
+      });
   };
 
   const changeCameraQuality = async (quality) => {
     if (!socket || !deviceIdRef.current || quality === currentQuality) return;
-    
+
     const constraints = {
-      low: { width: { ideal: 640, max: 1280 }, height: { ideal: 360, max: 720 }, frameRate: { ideal: 10, max: 15 } },
-      medium: { width: { ideal: 1280, max: 1920 }, height: { ideal: 720, max: 1080 }, frameRate: { ideal: 20, max: 30 } },
-      high: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } }
+      low: {
+        width: { ideal: 640, max: 1280 },
+        height: { ideal: 360, max: 720 },
+        frameRate: { ideal: 10, max: 15 },
+      },
+      medium: {
+        width: { ideal: 1280, max: 1920 },
+        height: { ideal: 720, max: 1080 },
+        frameRate: { ideal: 20, max: 30 },
+      },
+      high: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
     };
-    
+
     const constraint = constraints[quality] || constraints.medium;
-    
+
     try {
       console.log('Changing camera quality to:', quality, constraint);
-      
+
       // Apply constraints to all active video tracks
       for (const [deviceId, stream] of Object.entries(allCameraStreams)) {
         const tracks = stream.getVideoTracks();
@@ -780,7 +836,7 @@ const startCameraStreaming = async () => {
           }
         }
       }
-      
+
       // Also apply to combined stream if it has video tracks
       if (streamRef.current) {
         const combinedTracks = streamRef.current.getVideoTracks();
@@ -792,7 +848,7 @@ const startCameraStreaming = async () => {
           }
         }
       }
-      
+
       setCurrentQuality(quality);
       socket.emit('quality-changed', { quality });
     } catch (err) {
@@ -821,24 +877,27 @@ const startCameraStreaming = async () => {
     });
   }, []);
 
-  const saveRecording = useCallback(async (blob, metadata = {}) => {
-    const db = await initDB();
-    return new Promise((resolve, reject) => {
-      const transaction = db.transaction(['recordings'], 'readwrite');
-      const store = transaction.objectStore('recordings');
-      const record = {
-        blob,
-        timestamp: Date.now(),
-        sessionId,
-        deviceId: deviceIdRef.current,
-        duration: recordingTime,
-        ...metadata
-      };
-      const request = store.add(record);
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error);
-    });
-  }, [sessionId, recordingTime]);
+  const saveRecording = useCallback(
+    async (blob, metadata = {}) => {
+      const db = await initDB();
+      return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['recordings'], 'readwrite');
+        const store = transaction.objectStore('recordings');
+        const record = {
+          blob,
+          timestamp: Date.now(),
+          sessionId,
+          deviceId: deviceIdRef.current,
+          duration: recordingTime,
+          ...metadata,
+        };
+        const request = store.add(record);
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+    },
+    [sessionId, recordingTime],
+  );
 
   const getRecordings = useCallback(async () => {
     const db = await initDB();
@@ -866,15 +925,18 @@ const startCameraStreaming = async () => {
   // ============ Recording Controls ============
   const startRecording = useCallback(async () => {
     if (!streamRef.current || isRecording) return;
-    
+
     try {
-      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
-        ? 'video/webm;codecs=vp9' 
+      const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
+        ? 'video/webm;codecs=vp9'
         : MediaRecorder.isTypeSupported('video/webm;codecs=vp8')
-        ? 'video/webm;codecs=vp8'
-        : 'video/webm';
-      
-      const recorder = new MediaRecorder(streamRef.current, { mimeType, videoBitsPerSecond: 5000000 });
+          ? 'video/webm;codecs=vp8'
+          : 'video/webm';
+
+      const recorder = new MediaRecorder(streamRef.current, {
+        mimeType,
+        videoBitsPerSecond: 5000000,
+      });
       mediaRecorderRef.current = recorder;
       const chunks = []; // FIXED: closure-local buffer; the state array captured here was always empty at onstop
       setRecordedChunks([]);
@@ -883,26 +945,26 @@ const startCameraStreaming = async () => {
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) {
           chunks.push(e.data);
-          setRecordedChunks(prev => [...prev, e.data]);
+          setRecordedChunks((prev) => [...prev, e.data]);
         }
       };
 
       recorder.onstop = async () => {
         const blob = new Blob(chunks, { type: mimeType });
         if (blob.size > 0) {
-          await saveRecording(blob, { mimeType }).catch(err =>
-            console.error('Failed to save recording:', err)
+          await saveRecording(blob, { mimeType }).catch((err) =>
+            console.error('Failed to save recording:', err),
           );
         }
         setRecordedChunks([]);
       };
-      
+
       recorder.start(1000); // Collect data every second
       setIsRecording(true);
-      
+
       // Start timer
       recordingTimerRef.current = setInterval(() => {
-        setRecordingTime(prev => prev + 1);
+        setRecordingTime((prev) => prev + 1);
       }, 1000);
     } catch (err) {
       console.error('Failed to start recording:', err);
@@ -923,8 +985,12 @@ const startCameraStreaming = async () => {
   }, [isRecording]);
 
   const formatTime = (seconds) => {
-    const h = Math.floor(seconds / 3600).toString().padStart(2, '0');
-    const m = Math.floor((seconds % 3600) / 60).toString().padStart(2, '0');
+    const h = Math.floor(seconds / 3600)
+      .toString()
+      .padStart(2, '0');
+    const m = Math.floor((seconds % 3600) / 60)
+      .toString()
+      .padStart(2, '0');
     const s = (seconds % 60).toString().padStart(2, '0');
     return `${h}:${m}:${s}`;
   };
@@ -951,7 +1017,7 @@ const startCameraStreaming = async () => {
         <div className="error-container">
           <h2>Error</h2>
           <p>{error}</p>
-          <button onClick={() => window.location.href = '/join'} className="btn btn-primary">
+          <button onClick={() => (window.location.href = '/join')} className="btn btn-primary">
             <ArrowLeft size={16} />
             Go Back
           </button>
@@ -1016,10 +1082,7 @@ const startCameraStreaming = async () => {
           <span className="session-chip">SESSION: {sessionId}</span>
 
           <div className="role-options">
-            <button
-              onClick={() => setRole('device')}
-              className="role-option combined"
-            >
+            <button onClick={() => setRole('device')} className="role-option combined">
               <span className="role-icon combined">
                 <Video size={26} />
                 <Speaker size={20} style={{ position: 'absolute', bottom: 2, right: 2 }} />
@@ -1063,8 +1126,8 @@ const startCameraStreaming = async () => {
             {isCameraEnabled && isSpeakerEnabled
               ? 'Allow camera and microphone access for video streaming + audio playback'
               : isCameraEnabled
-              ? 'Allow camera and microphone access to stream video'
-              : 'Allow audio access to play music from the host'}
+                ? 'Allow camera and microphone access to stream video'
+                : 'Allow audio access to play music from the host'}
           </p>
 
           <div className="permission-card">
@@ -1072,15 +1135,15 @@ const startCameraStreaming = async () => {
               {isCameraEnabled && isSpeakerEnabled
                 ? 'Camera & Microphone + Audio'
                 : isCameraEnabled
-                ? 'Camera & Microphone'
-                : 'Audio Access'}
+                  ? 'Camera & Microphone'
+                  : 'Audio Access'}
             </h3>
             <p>
               {isCameraEnabled && isSpeakerEnabled
                 ? 'We need camera access to stream video, microphone for audio, and audio output for host playback'
                 : isCameraEnabled
-                ? 'We need camera access to stream video and microphone for audio'
-                : 'We need audio access to play the host\'s music on your device'}
+                  ? 'We need camera access to stream video and microphone for audio'
+                  : "We need audio access to play the host's music on your device"}
             </p>
           </div>
 
@@ -1101,9 +1164,7 @@ const startCameraStreaming = async () => {
             </button>
           </div>
 
-          <p className="permission-note">
-            Your browser will ask for permission on the next step
-          </p>
+          <p className="permission-note">Your browser will ask for permission on the next step</p>
         </div>
       </div>
     );
@@ -1118,7 +1179,9 @@ const startCameraStreaming = async () => {
             <span className="role-badge">{role}</span>
             <div className={`connection-status ${connectionStatus}`}>
               <span className="status-dot"></span>
-              {reconnecting ? 'Reconnecting...' : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
+              {reconnecting
+                ? 'Reconnecting...'
+                : connectionStatus.charAt(0).toUpperCase() + connectionStatus.slice(1)}
             </div>
           </div>
         </header>
@@ -1128,10 +1191,17 @@ const startCameraStreaming = async () => {
           <div
             className="ptt-banner"
             style={{
-              display: 'flex', alignItems: 'center', gap: '0.5rem',
-              padding: '0.5rem 0.9rem', borderRadius: '10px',
-              background: 'rgba(255, 64, 129, 0.12)', border: '1px solid rgba(255, 64, 129, 0.45)',
-              color: '#ff4081', fontWeight: 700, fontSize: '0.78rem', letterSpacing: '0.08em',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem 0.9rem',
+              borderRadius: '10px',
+              background: 'rgba(255, 64, 129, 0.12)',
+              border: '1px solid rgba(255, 64, 129, 0.45)',
+              color: '#ff4081',
+              fontWeight: 700,
+              fontSize: '0.78rem',
+              letterSpacing: '0.08em',
             }}
           >
             <span className="live-dot"></span>
@@ -1167,13 +1237,7 @@ const startCameraStreaming = async () => {
         {(role === 'camera' || role === 'device') && (
           <div className="camera-view">
             <div className="video-container">
-              <video
-                ref={videoRef}
-                autoPlay
-                playsInline
-                muted
-                className="camera-preview"
-              />
+              <video ref={videoRef} autoPlay playsInline muted className="camera-preview" />
               {isLive && (
                 <div className="live-indicator">
                   <span className="live-dot"></span>
@@ -1203,32 +1267,22 @@ const startCameraStreaming = async () => {
                   ))}
                 </div>
               )}
-              
+
               <div className="recording-controls">
                 {!isRecording ? (
-                  <button
-                    onClick={startRecording}
-                    className="btn btn-record"
-                    disabled={!isLive}
-                  >
+                  <button onClick={startRecording} className="btn btn-record" disabled={!isLive}>
                     <Circle size={16} />
                     <span>Start Recording</span>
                   </button>
                 ) : (
-                  <button
-                    onClick={stopRecording}
-                    className="btn btn-stop-record"
-                  >
+                  <button onClick={stopRecording} className="btn btn-stop-record">
                     <Square size={16} />
                     <span>Stop Recording</span>
                   </button>
                 )}
               </div>
 
-              <button
-                onClick={stopCameraStreaming}
-                className="btn btn-danger"
-              >
+              <button onClick={stopCameraStreaming} className="btn btn-danger">
                 Stop Sharing
               </button>
             </div>

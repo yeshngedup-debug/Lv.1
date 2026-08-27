@@ -19,15 +19,15 @@ WebRTC, with a Socket.IO signaling server.
 
 ## Features
 
-| Area | What works |
-|---|---|
-| Sessions | Create via dashboard, share via QR / link (`/join/:CODE`), rejoin after refresh |
-| Fleet | Live device list, per-device volume, remove device, presence heartbeats |
-| Video | Multi-camera devices; host switches active camera live via `replaceTrack` (no renegotiation) |
-| Audio broadcast | Upload a track → server stores it → participants stream it over HTTP, drift-corrected every 2 s against a server clock (NTP-style offset estimation) |
-| Playback control | Play / pause / resume / seek / end — server-authoritative state machine, all clients converge |
-| Push-to-talk | Host mic streamed to every connected device over dedicated WebRTC audio PCs |
-| Recording | Participants can record their outgoing feed locally (IndexedDB persistence) |
+| Area             | What works                                                                                                                                           |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Sessions         | Create via dashboard, share via QR / link (`/join/:CODE`), rejoin after refresh                                                                      |
+| Fleet            | Live device list, per-device volume, remove device, presence heartbeats                                                                              |
+| Video            | Multi-camera devices; host switches active camera live via `replaceTrack` (no renegotiation)                                                         |
+| Audio broadcast  | Upload a track → server stores it → participants stream it over HTTP, drift-corrected every 2 s against a server clock (NTP-style offset estimation) |
+| Playback control | Play / pause / resume / seek / end — server-authoritative state machine, all clients converge                                                        |
+| Push-to-talk     | Host mic streamed to every connected device over dedicated WebRTC audio PCs                                                                          |
+| Recording        | Participants can record their outgoing feed locally (IndexedDB persistence)                                                                          |
 
 ## Repository layout
 
@@ -66,19 +66,19 @@ npm start
 
 ## Environment variables
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3001` | HTTP/WebSocket port |
-| `BASE_URL` | `http://localhost:3001` | Public base URL for QR codes |
-| `RENDER_EXTERNAL_URL` | (injected) | Render injects this automatically |
-| `CORS_ORIGIN` | `https://iris-syncd.onrender.com` | Comma-separated allowlist |
-| `SESSION_TIMEOUT` | `3600000` | Session TTL (ms) |
-| `LOG_LEVEL` | `info` | Winston log level |
-| `REDIS_URL` | (optional) | Redis connection string for horizontal scaling |
-| `VITE_TURN_URL` | (required for prod) | TURN server URL (e.g., `turn:global.relay.metered.ca:80`) |
-| `VITE_TURN_USERNAME` | (required for prod) | TURN username |
-| `VITE_TURN_CREDENTIAL` | (required for prod) | TURN credential |
-| `SENTRY_DSN` | (optional) | Sentry DSN for error tracking |
+| Variable               | Default                           | Description                                               |
+| ---------------------- | --------------------------------- | --------------------------------------------------------- |
+| `PORT`                 | `3001`                            | HTTP/WebSocket port                                       |
+| `BASE_URL`             | `http://localhost:3001`           | Public base URL for QR codes                              |
+| `RENDER_EXTERNAL_URL`  | (injected)                        | Render injects this automatically                         |
+| `CORS_ORIGIN`          | `https://iris-syncd.onrender.com` | Comma-separated allowlist                                 |
+| `SESSION_TIMEOUT`      | `3600000`                         | Session TTL (ms)                                          |
+| `LOG_LEVEL`            | `info`                            | Winston log level                                         |
+| `REDIS_URL`            | (optional)                        | Redis connection string for horizontal scaling            |
+| `VITE_TURN_URL`        | (required for prod)               | TURN server URL (e.g., `turn:global.relay.metered.ca:80`) |
+| `VITE_TURN_USERNAME`   | (required for prod)               | TURN username                                             |
+| `VITE_TURN_CREDENTIAL` | (required for prod)               | TURN credential                                           |
+| `SENTRY_DSN`           | (optional)                        | Sentry DSN for error tracking                             |
 
 ## Production deployment (Render)
 
@@ -90,6 +90,7 @@ npm start
 6. Deploy — `render.yaml` defines the build/start commands and health checks
 
 Health check endpoints:
+
 - `/api/health` — basic liveness
 - `/api/metrics` — Prometheus metrics (`iris_*`)
 
