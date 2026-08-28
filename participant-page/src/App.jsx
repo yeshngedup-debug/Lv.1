@@ -248,6 +248,12 @@ function App() {
       setHostTalking(false);
     });
 
+    socket.on('device-volume', ({ volume }) => {
+      if (audioRef.current && typeof volume === 'number') {
+        audioRef.current.volume = Math.max(0, Math.min(1, volume));
+      }
+    });
+
     // Push-to-talk: answer the host's WebRTC offer and play the mic stream
     socket.on('ptt-offer', async ({ offer }) => {
       try {

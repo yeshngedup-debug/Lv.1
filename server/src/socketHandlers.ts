@@ -297,6 +297,15 @@ export function registerSocketHandlers(io: Server): void {
       }
     });
 
+    socket.on('device-volume', async ({ deviceId, volume }: any) => {
+      if (socket.data.role !== 'host') return;
+      const session = await getSession(socket.data.sessionId);
+      const device = session && deviceId ? session.devices.get(deviceId) : null;
+      if (device && typeof volume === 'number' && Number.isFinite(volume)) {
+        io.to(device.socketId).emit('device-volume', { volume: Math.max(0, Math.min(1, volume)) });
+      }
+    });
+
     socket.on('request-quality', async ({ deviceId, quality }: any) => {
       if (socket.data.role !== 'host') return;
       const session = await getSession(socket.data.sessionId);

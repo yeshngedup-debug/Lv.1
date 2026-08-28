@@ -95,6 +95,7 @@ function App() {
   const {
     devices,
     listeningDeviceId,
+    fullscreenDeviceId,
     setDevices,
     updateDevice,
     removeDevice,
@@ -258,6 +259,16 @@ function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [showJoinModal, setShowJoinModal]);
+
+  // Fullscreen camera overlay: Esc exits
+  useEffect(() => {
+    if (!fullscreenDeviceId) return;
+    const onKey = (e) => {
+      if (e.key === 'Escape') clearFullscreen();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [fullscreenDeviceId, clearFullscreen]);
 
   // Socket connection with cleanup — real server protocol.
   // Runs once on mount: depending on `socket` here would loop, because the
@@ -869,6 +880,63 @@ function App() {
           </div>
         )}
 
+        {/* Fullscreen Camera Overlay */}
+        {fullscreenDeviceId &&
+          (() => {
+            const dev = devices.get(fullscreenDeviceId);
+            if (!dev) return null;
+            return (
+              <div
+                className="fixed inset-0 z-50 bg-black/95 flex flex-col"
+                role="dialog"
+                aria-modal="true"
+                aria-label={`${dev.nickname || 'Device'} camera fullscreen`}
+              >
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div className="flex items-center gap-3">
+                    <Video size={16} className="text-accent-cyan" />
+                    <span className="text-sm font-medium text-text-primary">
+                      {dev.nickname || 'Guest device'}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium bg-accent-green/20 text-accent-green border border-accent-green/30">
+                      <span className="w-1.5 h-1.5 rounded-full bg-accent-green" />
+                      LIVE
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => handleListenToggle(dev.id)}
+                      aria-pressed={listeningDeviceId === dev.id}
+                      className={`px-3 py-2 rounded-lg border text-xs font-medium flex items-center gap-2 ${
+                        listeningDeviceId === dev.id
+                          ? 'bg-accent-cyan/15 border-accent-cyan/40 text-accent-cyan'
+                          : 'bg-white/5 border-white/10 text-text-primary hover:bg-white/10'
+                      }`}
+                    >
+                      {listeningDeviceId === dev.id ? 'Mic audible' : 'Listen to mic'}
+                    </button>
+                    <button
+                      onClick={clearFullscreen}
+                      aria-label="Exit fullscreen"
+                      className="p-2 rounded-lg bg-white/5 border border-white/10 text-text-primary hover:bg-white/10"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 px-4 pb-4">
+                  <video
+                    ref={(el) => registerVideoElement(dev.id, el, 'fullscreen')}
+                    autoPlay
+                    playsInline
+                    muted={listeningDeviceId !== dev.id}
+                    className="w-full h-full object-contain rounded-xl bg-black"
+                  />
+                </div>
+              </div>
+            );
+          })()}
+
         {/* End Session Confirm */}
         {showEndSessionConfirm && (
           <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
@@ -1238,28 +1306,28 @@ function App() {
                       <DeviceCard
                         key={device.id}
                         device={device}
-                        isSelected={device.id === useDeviceStore.getState().fullscreenDeviceId}
-                        onClick={() => {
-                          // Toggle fullscreen or select device
-                          const current = useDeviceStore.getState().fullscreenDeviceId;
-                          if (current === device.id) {
-                            clearFullscreen();
-                          } else {
-                            setFullscreen(device.id);
-                          }
-                        }}
+                        onClick={() => setFullscreen(device.id)}
                         onVolumeChange={(vol) => {
                           updateDevice(device.id, { volume: vol });
+                          socket?.emit('device-volume', { deviceId: device.id, volume: vol });
                         }}
-                        volume={device.volume || 0.8}
+                        volume={device.volume}
                         registerVideoElement={registerVideoElement}
                         setFullscreenDevice={(id) => setFullscreen(id)}
                         removeDevice={() => {
                           socket?.emit('remove-device', { deviceId: device.id });
                         }}
-                        motionDetectionEnabled={device.motionDetectionEnabled ?? true}
-                        setMotionDetectionEnabled={(enabled) => {
-                          updateDevice(device.id, { motionDetectionEnabled: enabled });
+                        listening={listeningDeviceId === device.id}
+                        onListenToggle={handleListenToggle}
+                        onSwitchCamera={(d) => {
+                          const cams = d.cameras || [];
+                          if (cams.length < 2) return;
+                          const idx = Math.max(
+                            0,
+                            cams.findIndex((c) => c.id === d.activeCameraId),
+                          );
+                          const next = cams[(idx + 1) % cams.length];
+                          socket?.emit('switch-camera', { deviceId: d.id, cameraId: next.id });
                         }}
                         peerConnectionsRef={cameraPcsRef}
                       />
