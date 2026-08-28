@@ -37,6 +37,7 @@ function App() {
   }, [sessionId, role, nickname, isJoined]);
   const [isLive, setIsLive] = useState(false);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null);
   const [mediaPermission, setMediaPermission] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTrack, setCurrentTrack] = useState(null);
@@ -229,13 +230,11 @@ function App() {
     });
 
     socket.on('session-ended', () => {
-      alert('Session has ended by the host');
-      window.location.href = '/join';
+      setNotice('The host ended the session. Thanks for joining!');
     });
 
     socket.on('removed-from-session', () => {
-      alert('You have been removed from the session');
-      window.location.href = '/join';
+      setNotice('You were removed from the session by the host.');
     });
 
     socket.on('host-mic-active', () => {
@@ -1017,6 +1016,21 @@ function App() {
     window.location.href = '/join';
   };
 
+  if (notice) {
+    return (
+      <div className="app">
+        <div className="error-container">
+          <h2>Session ended</h2>
+          <p>{notice}</p>
+          <button onClick={() => (window.location.href = '/join')} className="btn btn-primary">
+            <ArrowLeft size={16} />
+            Join another session
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="app">
@@ -1039,7 +1053,7 @@ function App() {
           <div className="status-strip-left">
             <span className="status-pill">
               <span className="status-dot-pulse"></span>
-              GRIDLINE CONNECT
+              CONNECT
             </span>
           </div>
         </div>
@@ -1053,6 +1067,10 @@ function App() {
           <input
             type="text"
             placeholder="SESSION CODE"
+            aria-label="8-character session code"
+            autoFocus
+            autoCapitalize="characters"
+            autoComplete="off"
             value={sessionId || ''}
             onChange={(e) => setSessionId(e.target.value.toUpperCase())}
             maxLength={8}
@@ -1139,23 +1157,24 @@ function App() {
           <div className="permission-card">
             <h3>
               {isCameraEnabled && isSpeakerEnabled
-                ? 'Camera & Microphone + Audio'
+                ? 'Camera, mic & speaker'
                 : isCameraEnabled
-                  ? 'Camera & Microphone'
-                  : 'Audio Access'}
+                  ? 'Camera & mic'
+                  : 'Speaker'}
             </h3>
             <p>
               {isCameraEnabled && isSpeakerEnabled
-                ? 'We need camera access to stream video, microphone for audio, and audio output for host playback'
+                ? 'Your camera streams to the host, your mic can be listened in, and this phone plays the host’s music in sync.'
                 : isCameraEnabled
-                  ? 'We need camera access to stream video and microphone for audio'
-                  : "We need audio access to play the host's music on your device"}
+                  ? 'Your camera streams to the host and your mic can be listened in.'
+                  : 'This phone plays the host’s music in sync with every other device.'}
             </p>
           </div>
 
           <input
             type="text"
             placeholder="Your nickname (optional)"
+            aria-label="Your nickname (optional)"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             maxLength={50}
@@ -1183,7 +1202,7 @@ function App() {
           <h1>Iris SYNCD</h1>
           <div className="header-right">
             <span className="role-badge">{role}</span>
-            <div className={`connection-status ${connectionStatus}`}>
+            <div className={`connection-status ${connectionStatus}`} role="status" aria-live="polite">
               <span className="status-dot"></span>
               {reconnecting
                 ? 'Reconnecting...'
